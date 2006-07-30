@@ -16,6 +16,8 @@ AM_INIT_AUTOMAKE(gputrans, "SVN")
 AC_PROG_CC
 
 # Checks for libraries.
+AC_CHECK_LIB([glut], [glutInit])
+AC_CHECK_LIB([GLEW], [glewInit])
 
 # Checks for header files.
 AC_HEADER_STDC

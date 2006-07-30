@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <GL/glut.h>
+#include <GL/gl.h>
+#include <GL/glext.h>
 
 int main( int argc, char **argv );
 void do_parent( pid_t child );
@@ -23,10 +25,11 @@ void do_child( int childNum )
 {
     char       *shmBlock;
     int         argc = 3;
-    char       *arg0 = "client";
-    char       *arg1 = "-display";
     char        display[256];
-    char       *argv[] = { arg0, arg1, display };
+    char       *argv[] = { "client", "-display", display };
+    GLuint      fb;
+    int         maxTexSize;
+    const char *glRenderer;
 
     sprintf( display, ":0.%d", childNum );
     printf( "In child #%d: %s %s\n", childNum, argv[1], argv[2] );
@@ -34,9 +37,32 @@ void do_child( int childNum )
     shmBlock = (char *)shmat( idShm, NULL, 0 );
     printf( "Message = %s\n", shmBlock );
 
-    while( 1 ) {
-        sleep(1);
-    }
+    glutInit( &argc, argv );
+    glutCreateWindow( "gputrans" );
+    glewInit();
+
+#if 0
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluOrtho2D(0, 0, texSize, texSize );
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glViewport(0, 0, texSize, texSize );
+#endif
+
+#if 0
+    glGenFramebufferEXT(1, &fb);
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fb);
+#endif
+
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTexSize);
+    glRenderer = (const char *) glGetString(GL_RENDERER);
+
+    printf( "Child %d - Renderer: %s\n", childNum, glRenderer );
+    printf( "Child %d - Max Texture Size: %d\n", childNum, maxTexSize );
+
+    sleep(10);
+    shmdt( shmBlock );
 }
 
 int main( int argc, char **argv )
@@ -63,9 +89,9 @@ int main( int argc, char **argv )
     }
 
     if( child ) {
-        while( 1 ) {
-            sleep(1);
-        }
+        sleep(20);
+        shmdt( shmBlock );
+        shmctl( idShm, IPC_RMID, NULL );
     }
 }
 
