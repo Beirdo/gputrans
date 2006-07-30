@@ -6,6 +6,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include <GL/glut.h>
 
 int main( int argc, char **argv );
 void do_parent( pid_t child );
@@ -21,8 +22,14 @@ void do_parent( pid_t child )
 void do_child( int childNum )
 {
     char       *shmBlock;
+    int         argc = 3;
+    char       *arg0 = "client";
+    char       *arg1 = "-display";
+    char        display[256];
+    char       *argv[] = { arg0, arg1, display };
 
-    printf( "In child #%d\n", childNum );
+    sprintf( display, ":0.%d", childNum );
+    printf( "In child #%d: %s %s\n", childNum, argv[1], argv[2] );
 
     shmBlock = (char *)shmat( idShm, NULL, 0 );
     printf( "Message = %s\n", shmBlock );
