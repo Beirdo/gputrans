@@ -4,7 +4,7 @@
 AC_PREREQ(2.59)
 AC_INIT(gputrans, SVN, gjhurlbu@gmail.com)
 AC_CONFIG_AUX_DIR(scripts)
-AC_CONFIG_SRCDIR(src/test.c)
+AC_CONFIG_SRCDIR(src/test-glut.c)
 AM_CONFIG_HEADER(include/config.h)
 
 AC_CANONICAL_SYSTEM
