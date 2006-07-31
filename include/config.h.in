@@ -6,6 +6,12 @@
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
+/* Define to 1 if you have the `GL' library (-lGL). */
+#undef HAVE_LIBGL
+
+/* Define to 1 if you have the `GLEW' library (-lGLEW). */
+#undef HAVE_LIBGLEW
+
 /* Define to 1 if you have the `glut' library (-lglut). */
 #undef HAVE_LIBGLUT
 
@@ -45,6 +51,9 @@
 /* Define to 1 if `vfork' works. */
 #undef HAVE_WORKING_VFORK
 
+/* Minimum libGLEW version required */
+#undef MIN_GLEW_VERSION
+
 /* Name of package */
 #undef PACKAGE
 
@@ -68,6 +77,9 @@
 
 /* Version number of package */
 #undef VERSION
+
+/* Define to empty if `const' does not conform to ANSI C. */
+#undef const
 
 /* Define to `int' if <sys/types.h> does not define. */
 #undef pid_t

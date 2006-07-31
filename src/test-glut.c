@@ -6,9 +6,8 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include <GL/glew.h>
 #include <GL/glut.h>
-#include <GL/gl.h>
-#include <GL/glext.h>
 
 int main( int argc, char **argv );
 void do_parent( pid_t child );
@@ -40,6 +39,8 @@ void do_child( int childNum )
     glutInit( &argc, argv );
     glutCreateWindow( "gputrans" );
     glewInit();
+    
+    printf( "Using GLEW %s\n", glewGetString(GLEW_VERSION) );
 
 #if 0
     glMatrixMode(GL_PROJECTION);
@@ -50,10 +51,8 @@ void do_child( int childNum )
     glViewport(0, 0, texSize, texSize );
 #endif
 
-#if 0
-    glGenFramebufferEXT(1, &fb);
+    glGenFramebuffersEXT(1, &fb);
     glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fb);
-#endif
 
     glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTexSize);
     glRenderer = (const char *) glGetString(GL_RENDERER);
