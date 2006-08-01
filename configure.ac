@@ -4,7 +4,7 @@
 AC_PREREQ(2.59)
 AC_INIT(gputrans, SVN, gjhurlbu@gmail.com)
 AC_CONFIG_AUX_DIR(scripts)
-AC_CONFIG_SRCDIR(src/test-glut.c)
+AC_CONFIG_SRCDIR(src/main.c)
 AM_CONFIG_HEADER(include/config.h)
 
 AC_CANONICAL_SYSTEM
@@ -67,12 +67,22 @@ AC_LANG_POP(C)
 
 # Checks for header files.
 AC_HEADER_STDC
-AC_CHECK_HEADERS([string.h unistd.h])
+AC_HEADER_SYS_WAIT
+AC_CHECK_HEADERS([stdlib.h string.h sys/time.h unistd.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
+AC_HEADER_STDBOOL
 AC_C_CONST
 AC_TYPE_PID_T
+AC_CHECK_DECLS([sys_siglist])
+AC_HEADER_TIME
+AC_STRUCT_TM
 
 # Checks for library functions.
 AC_FUNC_FORK
+AC_FUNC_MALLOC
+AC_TYPE_SIGNAL
+AC_FUNC_STRFTIME
+AC_CHECK_FUNCS([atexit gettimeofday localtime_r memset])
+
 AC_OUTPUT([Makefile src/Makefile])
