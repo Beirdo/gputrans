@@ -37,8 +37,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
-#include <GL/glew.h>
-#include <GL/glut.h>
 #include "queue.h"
 #include "logging.h"
 

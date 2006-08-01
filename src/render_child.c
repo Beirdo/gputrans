@@ -31,12 +31,10 @@
 #include <sys/shm.h>
 #include <sys/sem.h>
 #include <sys/msg.h>
-#include <sys/wait.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <signal.h>
 #include <GL/glew.h>
 #include <GL/glut.h>
 #include "queue.h"
