@@ -39,6 +39,7 @@
 #include <signal.h>
 #include "queue.h"
 #include "logging.h"
+#include "shared_mem.h"
 
 
 /* SVN generated ID string */
@@ -72,10 +73,9 @@ int main( int argc, char **argv )
 
     LogPrint( LOG_NOTICE, "Starting, %d", argc );
 
-    idShm = shmget( IPC_PRIVATE, 1024, IPC_CREAT | 0600 );
+    idShm = shmget( IPC_PRIVATE, sizeof(sharedMem_t), IPC_CREAT | 0600 );
     shmBlock = (char *)shmat( idShm, NULL, 0 );
-
-    strcpy( shmBlock, "Hello there!" );
+    memset( shmBlock, 0, sizeof(sharedMem_t) );
 
     child = -1;
     for( i = 0; i < 5 && child; i++ ) {

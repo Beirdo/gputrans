@@ -39,6 +39,7 @@
 #include <GL/glut.h>
 #include "queue.h"
 #include "logging.h"
+#include "shared_mem.h"
 
 
 /* SVN generated ID string */
@@ -54,20 +55,26 @@ extern char       *shmBlock;
 
 void do_child( int childNum )
 {
-    int         argc = 3;
-    char        display[256];
-    char       *argv[] = { "client", "-display", display };
-    GLuint      fb;
-    int         maxTexSize;
-    const char *glRenderer;
+    sharedMem_t    *sharedMem;
+    cardInfo_t     *cardInfo;
+    int             argc = 3;
+    char           *argv[] = { "client", "-display", NULL };
+    GLuint          fb;
+    GLint           val;
+    const char     *glRenderer;
 
     (void)fb;
 
+    shmBlock = (char *)shmat( idShm, NULL, 0 );
+    sharedMem = (sharedMem_t *)shmBlock;
+    cardInfo = &sharedMem->cardInfo[childNum];
+
     atexit( SoftExitChild );
 
-    sprintf( display, ":0.%d", childNum );
-
-    shmBlock = (char *)shmat( idShm, NULL, 0 );
+    cardInfo->childNum = childNum;
+    snprintf( cardInfo->display, ELEMSIZE(display, cardInfo_t), ":0.%d", 
+              childNum );
+    argv[2] = cardInfo->display;
 
     glutInit( &argc, argv );
     glutCreateWindow( "gputrans" );
@@ -86,23 +93,58 @@ void do_child( int childNum )
     glViewport(0, 0, texSize, texSize );
 #endif
 
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE,  &val);
+    cardInfo->maxTexSize = val;
+
+    glRenderer = (const char *) glGetString(GL_RENDERER);
+    strncpy( cardInfo->renderer, glRenderer, ELEMSIZE(renderer, cardInfo_t) );
+
+    glGetIntegerv(GL_MAX_VIEWPORT_DIMS, &val);
+    cardInfo->maxViewportDim = val;
+
+    LogPrint( LOG_NOTICE, "<%d> Display: %s", childNum, cardInfo->display );
+    LogPrint( LOG_NOTICE, "<%d> Renderer: %s", childNum, cardInfo->renderer );
+    LogPrint( LOG_NOTICE, "<%d> Max Texture Size: %d", childNum, 
+                          cardInfo->maxTexSize );
+    LogPrint( LOG_NOTICE, "<%d> Max Viewport Dimensions: %d", childNum, 
+                          cardInfo->maxViewportDim );
+
+    /* GLEW_EXT_framebuffer_object doesn't seem to work */
     if( glGenFramebuffersEXT && glBindFramebufferEXT ) {
         LogPrint( LOG_NOTICE, "<%d> Supports framebuffer objects", childNum );
+        cardInfo->haveFBO = TRUE;
+        glGetIntegerv(GL_MAX_COLOR_ATTACHMENTS_EXT, &val);
+        cardInfo->maxColorAttach = val;
+        LogPrint( LOG_NOTICE, "<%d> Max Color Attachments: %d", childNum, 
+                              cardInfo->maxColorAttach );
     } else {
         LogPrint( LOG_NOTICE, "<%d> Does not support framebuffer objects", 
                               childNum );
+        cardInfo->haveFBO = FALSE;
     }
+
+    if( GLEW_ARB_texture_rectangle ) {
+        LogPrint( LOG_NOTICE, "<%d> Supports texture rectangles", childNum );
+        cardInfo->haveTextRect = TRUE;
+    } else {
+        LogPrint( LOG_NOTICE, "<%d> Does not support texture rectangles",
+                              childNum );
+        cardInfo->haveTextRect = FALSE;
+    }
+
+    if( GLEW_NV_float_buffer ) {
+        LogPrint( LOG_NOTICE, "<%d> Supports NV float buffers", childNum );
+        cardInfo->haveNvFloat = TRUE;
+    } else {
+        LogPrint( LOG_NOTICE, "<%d> Does not support NV float buffers",
+                              childNum );
+        cardInfo->haveNvFloat = FALSE;
+    }
+
 #if 0
     glGenFramebuffersEXT(1, &fb);
     glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fb);
 #endif
-
-    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxTexSize);
-    glRenderer = (const char *) glGetString(GL_RENDERER);
-
-    LogPrint( LOG_NOTICE, "<%d> (%s) Renderer: %s", childNum, display,
-                          glRenderer );
-    LogPrint( LOG_NOTICE, "<%d> Max Texture Size: %d", childNum, maxTexSize );
 
     sleep(10);
     exit(0);
