@@ -47,16 +47,11 @@
 static char ident[] _UNUSED_ = 
     "$Id$";
 
-int main( int argc, char **argv );
 void do_child( int childNum );
-void signal_handler( int signum );
-void signal_child( int signum );
-void SoftExitParent( void );
 void SoftExitChild( void );
 
-int         idShm, idSem;
-int         childCount = 0;
-char       *shmBlock;
+extern int         idShm, idSem;
+extern char       *shmBlock;
 
 
 void do_child( int childNum )
@@ -93,6 +88,12 @@ void do_child( int childNum )
     glViewport(0, 0, texSize, texSize );
 #endif
 
+    if( glGenFramebuffersEXT && glBindFramebufferEXT ) {
+        LogPrint( LOG_NOTICE, "<%d> Supports framebuffer objects", childNum );
+    } else {
+        LogPrint( LOG_NOTICE, "<%d> Does not support framebuffer objects", 
+                              childNum );
+    }
 #if 0
     glGenFramebuffersEXT(1, &fb);
     glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fb);
@@ -109,118 +110,6 @@ void do_child( int childNum )
     exit(0);
 }
 
-int main( int argc, char **argv )
-{
-    pid_t               child;
-    int                 i;
-    LoggingItem_t      *message;
-    char               *msg;
-    QueueMsg_t          type;
-    int                 len;
-
-    queueInit();
-
-    signal( SIGINT, signal_handler );
-    signal( SIGCHLD, signal_child );
-
-    LogPrint( LOG_NOTICE, "Starting, %d", argc );
-
-    idShm = shmget( IPC_PRIVATE, 1024, IPC_CREAT | 0600 );
-    shmBlock = (char *)shmat( idShm, NULL, 0 );
-
-    strcpy( shmBlock, "Hello there!" );
-
-    child = -1;
-    for( i = 0; i < 5 && child; i++ ) {
-        child = fork();
-        if( !child ) {
-            do_child( i );
-        } else {
-#if 0
-            LogPrint( LOG_NOTICE, "In parent - child = %d", child );
-#endif
-            childCount++;
-        }
-    }
-
-    if( child ) {
-        /* This is in the parent */
-        atexit( SoftExitParent );
-
-        while( 1 ) {
-            type = Q_MSG_LOG;
-            queueReceive( &type, &msg, &len, 0 );
-            message = (LoggingItem_t *)msg;
-            if( type == Q_MSG_LOG ) {
-                LogShowLine( message );
-            }
-        }
-    }
-}
-
-void signal_handler( int signum )
-{
-    extern const char *const sys_siglist[];
-
-    LogPrint( LOG_CRIT, "Received signal: %s", sys_siglist[signum] );
-    exit( 0 );
-}
-
-void signal_child( int signum )
-{
-    extern const char *const sys_siglist[];
-    int             status;
-    int             ret;
-
-    LogPrint( LOG_CRIT, "Received signal: %s", sys_siglist[signum] );
-    while( 1 ) {
-        ret = waitpid( -1, &status, WNOHANG );
-        if( !ret ) {
-            /* Ain't none left waiting to be de-zombified */
-            return;
-        }
-        if( WIFEXITED(status) ) {
-            childCount--;
-            LogPrint( LOG_CRIT, "%d Child %d exited with exit code %d", childCount, ret,
-                      WEXITSTATUS(status) );
-        } else if( WIFSIGNALED(status) ) {
-            childCount--;
-            LogPrint( LOG_CRIT, "%d Child %d exited with signal %s", childCount, ret,
-                      sys_siglist[WTERMSIG(status)] );
-        }
-
-        if( childCount == 0 ) {
-            LogPrintNoArg( LOG_CRIT, "All children exited, exiting" );
-            exit( 0 );
-        }
-    }
-}
-
-void SoftExitParent( void )
-{
-    LoggingItem_t      *message;
-    char               *msg;
-    QueueMsg_t          type;
-    int                 len = 0;
-
-    while( len >= 0 ) {
-        type = Q_MSG_LOG;
-        queueReceive( &type, &msg, &len, IPC_NOWAIT );
-        if( len < 0 ) {
-            /* No more messages waiting */
-            continue;
-        }
-        message = (LoggingItem_t *)msg;
-        if( type == Q_MSG_LOG ) {
-            LogShowLine( message );
-        }
-    }
-
-    shmdt( shmBlock );
-    shmctl( idShm, IPC_RMID, NULL );
-    queueDestroy();
-    _exit( 0 );
-}
 
 void SoftExitChild( void )
 {
