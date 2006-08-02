@@ -36,9 +36,13 @@ static char queue_h_ident[] _UNUSED_ =
 
 
 typedef enum {
-    Q_MSG_LOG = 1
+    Q_MSG_UNUSED = 0,
+    Q_MSG_READY,
+    Q_MSG_LOG,
+    Q_MSG_CLIENT_START
 } QueueMsg_t;
 
+#define Q_MSG_ALL_SERVER    (-1 * Q_MSG_LOG)
 
 void queueInit( void );
 void queueDestroy( void );

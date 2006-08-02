@@ -52,9 +52,11 @@ void signal_child( int signum );
 void SoftExitParent( void );
 void do_child( int childNum );
 
-int         idShm, idSem;
-int         childCount = 0;
-char       *shmBlock;
+int                 idShm, idSem;
+int                 childCount = 0;
+char               *shmBlock;
+int                 numChildren = 0;
+static sharedMem_t *sharedMem;
 
 
 int main( int argc, char **argv )
@@ -65,6 +67,7 @@ int main( int argc, char **argv )
     char               *msg;
     QueueMsg_t          type;
     int                 len;
+    int                 childNum;
 
     queueInit();
 
@@ -76,6 +79,7 @@ int main( int argc, char **argv )
     idShm = shmget( IPC_PRIVATE, sizeof(sharedMem_t), IPC_CREAT | 0600 );
     shmBlock = (char *)shmat( idShm, NULL, 0 );
     memset( shmBlock, 0, sizeof(sharedMem_t) );
+    sharedMem = (sharedMem_t *)shmBlock;
 
     child = -1;
     for( i = 0; i < 5 && child; i++ ) {
@@ -87,6 +91,7 @@ int main( int argc, char **argv )
             LogPrint( LOG_NOTICE, "In parent - child = %d", child );
 #endif
             childCount++;
+            numChildren++;
         }
     }
 
@@ -95,11 +100,23 @@ int main( int argc, char **argv )
         atexit( SoftExitParent );
 
         while( 1 ) {
-            type = Q_MSG_LOG;
+            type = Q_MSG_ALL_SERVER;
             queueReceive( &type, &msg, &len, 0 );
+            if( len < 0 ) {
+                continue;
+            }
             message = (LoggingItem_t *)msg;
-            if( type == Q_MSG_LOG ) {
+            switch( type ) {
+            case Q_MSG_LOG:
                 LogShowLine( message );
+                break;
+            case Q_MSG_READY:
+                childNum = *(int *)msg;
+                LogPrint( LOG_NOTICE, "Child %d ready", childNum );
+                queueSendBinary( Q_MSG_CLIENT_START + childNum, "", 0 );
+                break;
+            default:
+                break;
             }
         }
     }
@@ -117,23 +134,38 @@ void signal_child( int signum )
 {
     extern const char *const sys_siglist[];
     int             status;
-    int             ret;
+    pid_t           pid;
+    int             i;
+    cardInfo_t     *cardInfo;
+    int             childNum;
 
-    LogPrint( LOG_CRIT, "Received signal: %s", sys_siglist[signum] );
+    (void)signum;
+
     while( 1 ) {
-        ret = waitpid( -1, &status, WNOHANG );
-        if( !ret ) {
+        pid = waitpid( -1, &status, WNOHANG );
+        if( !pid ) {
             /* Ain't none left waiting to be de-zombified */
             return;
         }
+
+        childNum = -1;
+        for( i = 0; i < numChildren; i++ ) {
+            cardInfo = &sharedMem->cardInfo[i];
+            if( cardInfo->pid == pid ) {
+                childNum = cardInfo->childNum;
+            }
+        }
+
         if( WIFEXITED(status) ) {
             childCount--;
-            LogPrint( LOG_CRIT, "Child %d exited (ret=%d) - %d remain", ret,
-                      WEXITSTATUS(status), childCount );
+            LogPrint( LOG_CRIT, "Child %d (pid %d) exited (ret=%d) - %d left", 
+                                childNum, pid, WEXITSTATUS(status), 
+                                childCount );
         } else if( WIFSIGNALED(status) ) {
             childCount--;
-            LogPrint( LOG_CRIT, "Child %d exited (%s) - %d remain", ret,
-                      sys_siglist[WTERMSIG(status)], childCount );
+            LogPrint( LOG_CRIT, "Child %d (pid %d) exited (%s) - %d left", 
+                                childNum, pid, sys_siglist[WTERMSIG(status)], 
+                                childCount );
         }
 
         if( childCount == 0 ) {

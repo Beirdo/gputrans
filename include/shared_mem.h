@@ -28,18 +28,23 @@
 #ifndef _shared_mem_h
 #define _shared_mem_h
 
+#include <sys/types.h>
+
 /* SVN generated ID string */
 static char shared_mem_h_ident[] _UNUSED_ = 
     "$Id$";
 
-#define NUM_CARDS   5
+#define MAX_NUM_CARDS   8
 
 typedef struct {
     int         childNum;
+    pid_t       pid;
     char        display[16];
+    char        vendor[256];
     char        renderer[256];
+    char        version[256];
     int         maxTexSize;
-    int         maxViewportDim;
+    int         maxViewportDim[2];
     int         maxColorAttach;
     bool        haveFBO;
     bool        haveTextRect;
@@ -48,7 +53,7 @@ typedef struct {
 
 
 typedef struct {
-    cardInfo_t    cardInfo[NUM_CARDS];
+    cardInfo_t    cardInfo[MAX_NUM_CARDS];
 } sharedMem_t;
 
 #endif

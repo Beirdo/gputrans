@@ -88,7 +88,19 @@ void queueSendBinary( QueueMsg_t type, void *data, int len )
 
 void queueReceive( QueueMsg_t *type, char **buf, int *len, int flags )
 {
-    *len = msgrcv( idMsg, msg, MAX_MSG_SIZE + 1, *type, MSG_NOERROR | flags );
+    long        msgType;
+
+    /* For some reason, when casting, QueueMsg_t is treated as unsigned int,
+     * since it can be negative, we need to play tricks to get the typing
+     * right here
+     */
+    if( sizeof(QueueMsg_t) == 4 ) {
+        msgType = (long)*(int *)type;
+    } else {
+        msgType = (long)*type;
+    }
+
+    *len = msgrcv( idMsg, msg, MAX_MSG_SIZE + 1, msgType, MSG_NOERROR | flags );
 
     *type = msg->mtype;
     *buf = msg->mtext;
