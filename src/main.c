@@ -46,16 +46,19 @@
 static char ident[] _UNUSED_ = 
     "$Id$";
 
+#define CONF_FILE   "/etc/gputrans.conf"
+
 int main( int argc, char **argv );
 void signal_handler( int signum );
 void signal_child( int signum );
 void SoftExitParent( void );
 void do_child( int childNum );
+void readConfigFile( void );
 
 int                 idShm, idSem;
 int                 childCount = 0;
 char               *shmBlock;
-int                 numChildren = 0;
+int                 numChildren = -1;
 static sharedMem_t *sharedMem;
 
 
@@ -74,50 +77,59 @@ int main( int argc, char **argv )
     signal( SIGINT, signal_handler );
     signal( SIGCHLD, signal_child );
 
-    LogPrint( LOG_NOTICE, "Starting, %d", argc );
+    LogPrintNoArg( LOG_NOTICE, "Starting gputrans" );
 
     idShm = shmget( IPC_PRIVATE, sizeof(sharedMem_t), IPC_CREAT | 0600 );
     shmBlock = (char *)shmat( idShm, NULL, 0 );
     memset( shmBlock, 0, sizeof(sharedMem_t) );
     sharedMem = (sharedMem_t *)shmBlock;
 
+    readConfigFile();
+    if( numChildren == -1 ) {
+        fprintf( stderr, "Couldn't find config file %s\n\n", CONF_FILE );
+        exit( 1 );
+    }
+
+    /* Fork the children that will each control an OpenGL context */
     child = -1;
-    for( i = 0; i < 5 && child; i++ ) {
+    for( i = 0; i < numChildren && child; i++ ) {
         child = fork();
         if( !child ) {
+            /* Never returns */
             do_child( i );
         } else {
 #if 0
             LogPrint( LOG_NOTICE, "In parent - child = %d", child );
 #endif
             childCount++;
-            numChildren++;
         }
     }
 
-    if( child ) {
-        /* This is in the parent */
-        atexit( SoftExitParent );
+    if( !child ) {
+        exit( 0 );
+    }
 
-        while( 1 ) {
-            type = Q_MSG_ALL_SERVER;
-            queueReceive( &type, &msg, &len, 0 );
-            if( len < 0 ) {
-                continue;
-            }
-            message = (LoggingItem_t *)msg;
-            switch( type ) {
-            case Q_MSG_LOG:
-                LogShowLine( message );
-                break;
-            case Q_MSG_READY:
-                childNum = *(int *)msg;
-                LogPrint( LOG_NOTICE, "Child %d ready", childNum );
-                queueSendBinary( Q_MSG_CLIENT_START + childNum, "", 0 );
-                break;
-            default:
-                break;
-            }
+    /* This is in the parent */
+    atexit( SoftExitParent );
+
+    while( 1 ) {
+        type = Q_MSG_ALL_SERVER;
+        queueReceive( &type, &msg, &len, 0 );
+        if( len < 0 ) {
+            continue;
+        }
+        message = (LoggingItem_t *)msg;
+        switch( type ) {
+        case Q_MSG_LOG:
+            LogShowLine( message );
+            break;
+        case Q_MSG_READY:
+            childNum = *(int *)msg;
+            LogPrint( LOG_NOTICE, "Child %d ready", childNum );
+            queueSendBinary( Q_MSG_CLIENT_START + childNum, "", 0 );
+            break;
+        default:
+            break;
         }
     }
 }
@@ -201,6 +213,61 @@ void SoftExitParent( void )
     _exit( 0 );
 }
 
+void readConfigFile( void )
+{
+    FILE           *fp;
+    cardInfo_t     *cardInfo;
+    char            line[MAX_STRING_LENGTH];
+    char           *comment;
+    char           *display;
+    int             len;
+
+    fp = fopen( CONF_FILE, "r" );
+    if( !fp ) {
+        return;
+    }
+
+    while( !feof( fp ) && numChildren < MAX_NUM_CARDS ) {
+        fgets( line, MAX_STRING_LENGTH, fp );
+        if( line[0] == '\0' || line[0] == '\n' || line[0] == '\r' ||
+            line[0] == '#' ) {
+            continue;
+        }
+
+        display = &line[0];
+        comment = strchr( display, '#' );
+        if( comment ) {
+            *comment = '\0';
+        }
+
+        /* Eat leading spaces */
+        while( *display == ' ' || *display == '\t' ) {
+            display++;
+        }
+
+        /* Eat trailing spaces */
+        len = strlen( display );
+        while( len && (display[len-1] == ' ' || display[len-1] == '\t' ||
+                       display[len-1] == '\n' || display[len-1] == '\r') ) {
+            display[len-1] = '\0';
+            len--;
+        }
+
+        if( !len ) {
+            /* Empty string, eh? */
+            continue;
+        }
+
+        /* The remainder is our display string */
+        numChildren++;  /* initialized to -1, so preincrement */
+        cardInfo = &sharedMem->cardInfo[numChildren];
+
+        strncpy( cardInfo->display, display, ELEMSIZE( display, cardInfo_t ) );
+        cardInfo->display[ELEMSIZE(display, cardInfo_t) - 1] = '\0';
+    }
+
+    fclose( fp );
+}
 
 /*
  * vim:ts=4:sw=4:ai:et:si:sts=4

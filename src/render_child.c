@@ -48,7 +48,7 @@ static char ident[] _UNUSED_ =
 
 void do_child( int childNum );
 void SoftExitChild( void );
-void setupCardInfo( int childNum, int pass );
+void setupCardInfo( int childNum );
 
 extern int          idShm, idSem;
 extern char        *shmBlock;
@@ -71,8 +71,9 @@ void do_child( int childNum )
     shmBlock = NULL;
     atexit( SoftExitChild );
 
-    setupCardInfo( childNum, 1 );
-
+    shmBlock = (char *)shmat( idShm, NULL, 0 );
+    sharedMem = (sharedMem_t *)shmBlock;
+    cardInfo = &sharedMem->cardInfo[childNum];
     argv[2] = cardInfo->display;
 
     glutInit( &argc, argv );
@@ -92,8 +93,8 @@ void do_child( int childNum )
     glViewport(0, 0, texSize, texSize );
 #endif
 
-    /* Pass 2 must be done after OpenGL initialization */
-    setupCardInfo( childNum, 2 );
+    /* must be done after OpenGL initialization */
+    setupCardInfo( childNum );
 
     queueSendBinary( Q_MSG_READY, &childNum, sizeof(childNum) );
 
@@ -126,90 +127,76 @@ void SoftExitChild( void )
     _exit( 0 );
 }
 
-void setupCardInfo( int childNum, int pass )
+void setupCardInfo( int childNum )
 {
     GLint           val[4];
     const GLubyte  *string;
 
-    switch( pass ) {
-    case 1:
-        shmBlock = (char *)shmat( idShm, NULL, 0 );
-        sharedMem = (sharedMem_t *)shmBlock;
-        cardInfo = &sharedMem->cardInfo[childNum];
+    cardInfo->childNum = childNum;
+    cardInfo->pid = getpid();
 
-        cardInfo->childNum = childNum;
-        snprintf( cardInfo->display, ELEMSIZE(display, cardInfo_t), ":0.%d", 
-                  childNum );
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE,  &val[0]);
+    cardInfo->maxTexSize = val[0];
 
-        cardInfo->pid = getpid();
-        break;
-    case 2:
-        glGetIntegerv(GL_MAX_TEXTURE_SIZE,  &val[0]);
-        cardInfo->maxTexSize = val[0];
+    string = glGetString(GL_VENDOR);
+    strncpy( cardInfo->vendor, (char *)string, 
+             ELEMSIZE(vendor, cardInfo_t) );
 
-        string = glGetString(GL_VENDOR);
-        strncpy( cardInfo->vendor, (char *)string, 
-                 ELEMSIZE(vendor, cardInfo_t) );
+    string = glGetString(GL_RENDERER);
+    strncpy( cardInfo->renderer, (char *)string, 
+             ELEMSIZE(renderer, cardInfo_t) );
 
-        string = glGetString(GL_RENDERER);
-        strncpy( cardInfo->renderer, (char *)string, 
-                 ELEMSIZE(renderer, cardInfo_t) );
+    string = glGetString(GL_VERSION);
+    strncpy( cardInfo->version, (char *)string, 
+             ELEMSIZE(version, cardInfo_t) );
 
-        string = glGetString(GL_VERSION);
-        strncpy( cardInfo->version, (char *)string, 
-                 ELEMSIZE(version, cardInfo_t) );
+    glGetIntegerv(GL_MAX_VIEWPORT_DIMS, &val[0]);
+    cardInfo->maxViewportDim[0] = val[0];
+    cardInfo->maxViewportDim[1] = val[1];
 
-        glGetIntegerv(GL_MAX_VIEWPORT_DIMS, &val[0]);
-        cardInfo->maxViewportDim[0] = val[0];
-        cardInfo->maxViewportDim[1] = val[1];
+    LogPrint( LOG_NOTICE, "<%d> Display: %s", childNum, cardInfo->display );
+    LogPrint( LOG_NOTICE, "<%d> Vendor: %s", childNum, cardInfo->vendor );
+    LogPrint( LOG_NOTICE, "<%d> Renderer: %s", childNum, 
+                          cardInfo->renderer );
+    LogPrint( LOG_NOTICE, "<%d> Version: %s", childNum, cardInfo->version );
+    LogPrint( LOG_NOTICE, "<%d> Max Texture Size: %d", childNum, 
+                          cardInfo->maxTexSize );
+    LogPrint( LOG_NOTICE, "<%d> Max Viewport Dimensions: %dx%d", childNum, 
+                          cardInfo->maxViewportDim[0], 
+                          cardInfo->maxViewportDim[1]);
 
-        LogPrint( LOG_NOTICE, "<%d> Display: %s", childNum, cardInfo->display );
-        LogPrint( LOG_NOTICE, "<%d> Vendor: %s", childNum, cardInfo->vendor );
-        LogPrint( LOG_NOTICE, "<%d> Renderer: %s", childNum, 
-                              cardInfo->renderer );
-        LogPrint( LOG_NOTICE, "<%d> Version: %s", childNum, cardInfo->version );
-        LogPrint( LOG_NOTICE, "<%d> Max Texture Size: %d", childNum, 
-                              cardInfo->maxTexSize );
-        LogPrint( LOG_NOTICE, "<%d> Max Viewport Dimensions: %dx%d", childNum, 
-                              cardInfo->maxViewportDim[0], 
-                              cardInfo->maxViewportDim[1]);
+    /* GLEW_EXT_framebuffer_object doesn't seem to work */
+    if( glGenFramebuffersEXT && glBindFramebufferEXT ) {
+        LogPrint( LOG_NOTICE, "<%d> Supports framebuffer objects", 
+                              childNum );
+        cardInfo->haveFBO = TRUE;
+        glGetIntegerv(GL_MAX_COLOR_ATTACHMENTS_EXT, &val[0]);
+        cardInfo->maxColorAttach = val[0];
+        LogPrint( LOG_NOTICE, "<%d> Max Color Attachments: %d", childNum, 
+                              cardInfo->maxColorAttach );
+    } else {
+        LogPrint( LOG_NOTICE, "<%d> Does not support framebuffer objects", 
+                              childNum );
+        cardInfo->haveFBO = FALSE;
+    }
 
-        /* GLEW_EXT_framebuffer_object doesn't seem to work */
-        if( glGenFramebuffersEXT && glBindFramebufferEXT ) {
-            LogPrint( LOG_NOTICE, "<%d> Supports framebuffer objects", 
-                                  childNum );
-            cardInfo->haveFBO = TRUE;
-            glGetIntegerv(GL_MAX_COLOR_ATTACHMENTS_EXT, &val[0]);
-            cardInfo->maxColorAttach = val[0];
-            LogPrint( LOG_NOTICE, "<%d> Max Color Attachments: %d", childNum, 
-                                  cardInfo->maxColorAttach );
-        } else {
-            LogPrint( LOG_NOTICE, "<%d> Does not support framebuffer objects", 
-                                  childNum );
-            cardInfo->haveFBO = FALSE;
-        }
+    if( GLEW_ARB_texture_rectangle ) {
+        LogPrint( LOG_NOTICE, "<%d> Supports texture rectangles", 
+                              childNum );
+        cardInfo->haveTextRect = TRUE;
+    } else {
+        LogPrint( LOG_NOTICE, "<%d> Does not support texture rectangles",
+                              childNum );
+        cardInfo->haveTextRect = FALSE;
+    }
 
-        if( GLEW_ARB_texture_rectangle ) {
-            LogPrint( LOG_NOTICE, "<%d> Supports texture rectangles", 
-                                  childNum );
-            cardInfo->haveTextRect = TRUE;
-        } else {
-            LogPrint( LOG_NOTICE, "<%d> Does not support texture rectangles",
-                                  childNum );
-            cardInfo->haveTextRect = FALSE;
-        }
-
-        if( GLEW_NV_float_buffer ) {
-            LogPrint( LOG_NOTICE, "<%d> Supports NV float buffers", childNum );
-            cardInfo->haveNvFloat = TRUE;
-        } else {
-            LogPrint( LOG_NOTICE, "<%d> Does not support NV float buffers",
-                                  childNum );
-            cardInfo->haveNvFloat = FALSE;
-        }
-        break;
-    default:
-        break;
+    if( GLEW_NV_float_buffer ) {
+        LogPrint( LOG_NOTICE, "<%d> Supports NV float buffers", childNum );
+        cardInfo->haveNvFloat = TRUE;
+    } else {
+        LogPrint( LOG_NOTICE, "<%d> Does not support NV float buffers",
+                              childNum );
+        cardInfo->haveNvFloat = FALSE;
     }
 }
 
