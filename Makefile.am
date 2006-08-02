@@ -1,2 +1,2 @@
 AUTOMAKE_OPTIONS = no-dist
-SUBDIRS = src
+SUBDIRS = src example

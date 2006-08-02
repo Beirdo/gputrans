@@ -1,0 +1,13 @@
+# Config file for gputrans
+#
+# Format:  one X display (or "CPU") per line.  Blank lines and lines commented
+# with # are ignored
+#
+# This example defines 5 cards
+
+:0.0	# Geforce 6600
+:0.1	# Geforce4 MX440
+:0.2	# Geforce4 FX5500
+:0.3	# Geforce4 MX4000
+:0.4	# Geforce4 MX440
+

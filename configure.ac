@@ -85,4 +85,4 @@ AC_TYPE_SIGNAL
 AC_FUNC_STRFTIME
 AC_CHECK_FUNCS([atexit gettimeofday localtime_r memset])
 
-AC_OUTPUT([Makefile src/Makefile])
+AC_OUTPUT([Makefile src/Makefile example/Makefile])
