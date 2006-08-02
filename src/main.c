@@ -71,6 +71,8 @@ int main( int argc, char **argv )
     QueueMsg_t          type;
     int                 len;
     int                 childNum;
+    ChildMsg_t          msgOut;
+    cardInfo_t         *cardInfo;
 
     queueInit();
 
@@ -98,9 +100,6 @@ int main( int argc, char **argv )
             /* Never returns */
             do_child( i );
         } else {
-#if 0
-            LogPrint( LOG_NOTICE, "In parent - child = %d", child );
-#endif
             childCount++;
         }
     }
@@ -125,8 +124,25 @@ int main( int argc, char **argv )
             break;
         case Q_MSG_READY:
             childNum = *(int *)msg;
-            LogPrint( LOG_NOTICE, "Child %d ready", childNum );
-            queueSendBinary( Q_MSG_CLIENT_START + childNum, "", 0 );
+            cardInfo = &sharedMem->cardInfo[childNum];
+            if( !cardInfo->haveNvFloat || !cardInfo->haveTextRect ) {
+                LogPrint( LOG_NOTICE, "Child %d ready, but doesn't support "
+                                      "required extensions, killing it", 
+                                      childNum );
+                msgOut.type = CHILD_EXIT;
+                queueSendBinary( Q_MSG_CLIENT_START + childNum, 
+                                 (char *)&msgOut, 
+                                 ELEMSIZE(type, ChildMsg_t) );
+            } else {
+                LogPrint( LOG_NOTICE, "Child %d ready", childNum );
+                msgOut.type = CHILD_RENDER_MODE;
+                msgOut.payload.mode = 0;
+                queueSendBinary( Q_MSG_CLIENT_START + childNum, 
+                                 (char *)&msgOut, 
+                                 sizeof(ChildMsg_t) + 
+                                 ELEMSIZE( mode, ChildMsgPayload_t ) - 
+                                 ELEMSIZE( payload, ChildMsg_t ) );
+            }
             break;
         default:
             break;

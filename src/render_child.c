@@ -64,7 +64,7 @@ void do_child( int childNum )
     char           *msg;
     QueueMsg_t      type;
     int             len;
-
+    ChildMsg_t     *message;
 
     (void)fb;
 
@@ -113,7 +113,20 @@ void do_child( int childNum )
         }
     }
 
-    LogPrint( LOG_NOTICE, "<%d> Got message, exiting", childNum );
+    message = (ChildMsg_t *)msg;
+    switch( message->type ) {
+    case CHILD_EXIT:
+        LogPrint( LOG_NOTICE, "<%d> Got message, exiting", childNum );
+        break;
+    case CHILD_RENDER_MODE:
+        LogPrint( LOG_NOTICE, "<%d> Entering rendering mode %d", childNum,
+                              message->payload.mode );
+        sleep(10);
+        break;
+    default:
+        break;
+    }
+
     sleep(1);
     exit(0);
 }

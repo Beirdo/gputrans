@@ -38,11 +38,28 @@ static char queue_h_ident[] _UNUSED_ =
 typedef enum {
     Q_MSG_UNUSED = 0,
     Q_MSG_READY,
+    Q_MSG_FRAME_DONE,
     Q_MSG_LOG,
     Q_MSG_CLIENT_START
 } QueueMsg_t;
 
 #define Q_MSG_ALL_SERVER    (-1 * Q_MSG_LOG)
+
+typedef enum {
+    CHILD_EXIT,
+    CHILD_RENDER_MODE,
+    CHILD_RENDER_FRAME
+} ChildMsgType_t;
+
+typedef union {
+    int                 mode;
+    int                 frameNum;
+} ChildMsgPayload_t;
+
+typedef struct {
+    ChildMsgType_t      type;
+    ChildMsgPayload_t   payload;
+} ChildMsg_t;
 
 void queueInit( void );
 void queueDestroy( void );
