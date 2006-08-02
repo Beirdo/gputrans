@@ -91,6 +91,7 @@ int main( int argc, char **argv )
         fprintf( stderr, "Couldn't find config file %s\n\n", CONF_FILE );
         exit( 1 );
     }
+    numChildren++;  /* Adjust for starting at -1 */
 
     /* Fork the children that will each control an OpenGL context */
     child = -1;
