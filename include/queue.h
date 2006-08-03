@@ -2,7 +2,7 @@
  *  This file is part of the gputrans package
  *  Copyright (C) 2006 Gavin Hurlbut
  *
- *  beirdobot is free software; you can redistribute it and/or modify
+ *  gputrans is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation; either version 2 of the License, or
  *  (at your option) any later version.
@@ -39,6 +39,7 @@ typedef enum {
     Q_MSG_UNUSED = 0,
     Q_MSG_READY,
     Q_MSG_FRAME_DONE,
+    Q_MSG_DYING_GASP,
     Q_MSG_LOG,
     Q_MSG_CLIENT_START
 } QueueMsg_t;

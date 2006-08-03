@@ -2,7 +2,7 @@
  *  This file is part of the gputrans package
  *  Copyright (C) 2006 Gavin Hurlbut
  *
- *  beirdobot is free software; you can redistribute it and/or modify
+ *  gputrans is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation; either version 2 of the License, or
  *  (at your option) any later version.
@@ -49,24 +49,27 @@ static char ident[] _UNUSED_ =
 void do_child( int childNum );
 void SoftExitChild( void );
 void setupCardInfo( int childNum );
+void initFBO( int x, int y );
+void checkGLErrors( const char *label );
 
 extern int          idShm, idSem;
 extern char        *shmBlock;
 static sharedMem_t *sharedMem;
 static cardInfo_t  *cardInfo;
+static int          me;
+static bool         initialized = FALSE;
 
+GLuint              glutWindowHandle;
+GLuint              fb;
 
 void do_child( int childNum )
 {
     int             argc = 3;
     char           *argv[] = { "client", "-display", NULL };
-    GLuint          fb;
     char           *msg;
     QueueMsg_t      type;
     int             len;
     ChildMsg_t     *message;
-
-    (void)fb;
 
     shmBlock = NULL;
     atexit( SoftExitChild );
@@ -75,33 +78,17 @@ void do_child( int childNum )
     sharedMem = (sharedMem_t *)shmBlock;
     cardInfo = &sharedMem->cardInfo[childNum];
     argv[2] = cardInfo->display;
+    me = childNum;
 
     glutInit( &argc, argv );
-    glutCreateWindow( "gputrans" );
+    glutWindowHandle = glutCreateWindow( "gputrans" );
+    initialized = TRUE;
     glewInit();
     
-#if 0
-    LogPrint( LOG_NOTICE, "Using GLEW %s", glewGetString(GLEW_VERSION) );
-#endif
-
-#if 0
-    glMatrixMode(GL_PROJECTION);
-    glLoadIdentity();
-    gluOrtho2D(0, 0, texSize, texSize );
-    glMatrixMode(GL_MODELVIEW);
-    glLoadIdentity();
-    glViewport(0, 0, texSize, texSize );
-#endif
-
     /* must be done after OpenGL initialization */
     setupCardInfo( childNum );
 
     queueSendBinary( Q_MSG_READY, &childNum, sizeof(childNum) );
-
-#if 0
-    glGenFramebuffersEXT(1, &fb);
-    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fb);
-#endif
 
     len = -1;
 
@@ -134,9 +121,16 @@ void do_child( int childNum )
 
 void SoftExitChild( void )
 {
+    queueSendBinary( Q_MSG_DYING_GASP, &me, sizeof(me) );
+    if( initialized ) {
+        glutDestroyWindow (glutWindowHandle);
+    }
+
     if( shmBlock ) {
         shmdt( shmBlock );
     }
+
+    sleep( 1 );
     _exit( 0 );
 }
 
@@ -210,6 +204,36 @@ void setupCardInfo( int childNum )
         LogPrint( LOG_NOTICE, "<%d> Does not support NV float buffers",
                               childNum );
         cardInfo->haveNvFloat = FALSE;
+    }
+}
+
+void initFBO( int x, int y )
+{
+    /* Create the framebuffer object for off-screen rendering */
+    glGenFramebuffersEXT(1, &fb);
+
+    /* Redirect the output to said buffer rather than the screen */
+    glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fb);
+
+    glMatrixMode(GL_PROJECTION);
+    glLoadIdentity();
+    gluOrtho2D(0, x, 0, y );
+
+    glMatrixMode(GL_MODELVIEW);
+    glLoadIdentity();
+    glViewport(0, 0, x, y );
+}
+
+void checkGLErrors( const char *label )
+{
+    GLenum          errCode;
+    const GLubyte  *errStr;
+
+    if ((errCode = glGetError()) != GL_NO_ERROR) {
+        errStr = gluErrorString(errCode);
+        LogPrint( LOG_CRIT, "<%d> OpenGL ERROR: %s  (Label: %s)", errStr,
+                            label );
+        exit( 1 );
     }
 }
 

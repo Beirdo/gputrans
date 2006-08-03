@@ -2,7 +2,7 @@
  *  This file is part of the gputrans package
  *  Copyright (C) 2006 Gavin Hurlbut
  *
- *  beirdobot is free software; you can redistribute it and/or modify
+ *  gputrans is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation; either version 2 of the License, or
  *  (at your option) any later version.
@@ -106,6 +106,7 @@ int main( int argc, char **argv )
     }
 
     if( !child ) {
+        LogPrintNoArg( LOG_CRIT, "How the hell did I get here?" );
         exit( 0 );
     }
 
@@ -172,7 +173,7 @@ void signal_child( int signum )
 
     while( 1 ) {
         pid = waitpid( -1, &status, WNOHANG );
-        if( !pid ) {
+        if( pid <= 0 ) {
             /* Ain't none left waiting to be de-zombified */
             return;
         }
@@ -197,7 +198,7 @@ void signal_child( int signum )
                                 childCount );
         }
 
-        if( childCount == 0 ) {
+        if( childCount <= 0 ) {
             LogPrintNoArg( LOG_CRIT, "All children exited, exiting" );
             exit( 0 );
         }

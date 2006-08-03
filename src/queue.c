@@ -2,7 +2,7 @@
  *  This file is part of the gputrans package
  *  Copyright (C) 2006 Gavin Hurlbut
  *
- *  beirdobot is free software; you can redistribute it and/or modify
+ *  gputrans is free software; you can redistribute it and/or modify
  *  it under the terms of the GNU General Public License as published by
  *  the Free Software Foundation; either version 2 of the License, or
  *  (at your option) any later version.
@@ -78,7 +78,7 @@ void queueSendBinary( QueueMsg_t type, void *data, int len )
         return;
     }
 
-    msg->mtype = type;
+    msg->mtype = (long)type;
     if( len > MAX_MSG_SIZE + 1 ) {
         len = MAX_MSG_SIZE + 1;
     }
@@ -102,7 +102,7 @@ void queueReceive( QueueMsg_t *type, char **buf, int *len, int flags )
 
     *len = msgrcv( idMsg, msg, MAX_MSG_SIZE + 1, msgType, MSG_NOERROR | flags );
 
-    *type = msg->mtype;
+    *type = (QueueMsg_t)msg->mtype;
     *buf = msg->mtext;
 }
 
