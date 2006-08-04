@@ -51,6 +51,12 @@ void SoftExitChild( void );
 void setupCardInfo( int childNum );
 void initFBO( int x, int y );
 void checkGLErrors( const char *label );
+void drawQuad( int w, int h );
+bool checkFramebufferStatus( void );
+void swap( void );
+void setupTexture(const GLuint texID, int x, int y);
+void createTextures(int x, int y);
+void loadFrame(float *data, int x, int y);
 
 extern int          idShm, idSem;
 extern char        *shmBlock;
@@ -61,6 +67,20 @@ static bool         initialized = FALSE;
 
 GLuint              glutWindowHandle;
 GLuint              fb;
+
+/* ping pong management vars */
+int writeTex = 0;
+int readTex = 1;
+GLenum attachmentpoints[] = { GL_COLOR_ATTACHMENT0_EXT, 
+                              GL_COLOR_ATTACHMENT1_EXT };
+ 
+GLenum texTarget = GL_TEXTURE_RECTANGLE_ARB;
+GLenum texInternalFormat = GL_FLOAT_RGBA32_NV;
+GLenum texFormat = GL_RGBA;
+
+GLuint pingpongTexID[2];
+GLuint inputTexID;
+
 
 void do_child( int childNum )
 {
@@ -235,6 +255,147 @@ void checkGLErrors( const char *label )
                             label );
         exit( 1 );
     }
+}
+
+/*
+ * Renders w x h quad in top left corner of the viewport.
+ */
+void drawQuad( int w, int h )
+{
+    glBegin(GL_QUADS);
+    glVertex2f(0.0, 0.0);
+    glVertex2f(w, 0.0);
+    glVertex2f(w, h);
+    glVertex2f(0.0, h);
+    glEnd();
+}
+
+
+/*
+ * Checks framebuffer status.
+ * Copied directly out of the spec, modified to deliver a return value.
+ */
+bool checkFramebufferStatus( void )
+{
+    GLenum          status;
+
+    status = (GLenum)glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
+    switch (status) {
+    case GL_FRAMEBUFFER_COMPLETE_EXT:
+        return( TRUE );
+        break;
+    case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT_EXT:
+        LogPrint( LOG_NOTICE, "<%d> Framebuffer incomplete, incomplete "
+                              "attachment", me );
+        break;
+    case GL_FRAMEBUFFER_UNSUPPORTED_EXT:
+        LogPrint( LOG_NOTICE, "<%d> Unsupported framebuffer format", me );
+        break;
+    case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT_EXT:
+        LogPrint( LOG_NOTICE, "<%d> Framebuffer incomplete, missing "
+                              "attachment", me );
+        break;
+    case GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS_EXT:
+        LogPrint( LOG_NOTICE, "<%d> Framebuffer incomplete, attached images "
+                              "must have same dimensions", me );
+        break;
+    case GL_FRAMEBUFFER_INCOMPLETE_FORMATS_EXT:
+        LogPrint( LOG_NOTICE, "<%d> Framebuffer incomplete, attached images "
+                              "must have same format", me );
+        break;
+    case GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER_EXT:
+        LogPrint( LOG_NOTICE, "<%d> Framebuffer incomplete, missing draw "
+                              "buffer", me );
+        break;
+    case GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER_EXT:
+        LogPrint( LOG_NOTICE, "<%d> Framebuffer incomplete, missing read "
+                              "buffer", me );
+        break;
+    }
+
+    return( FALSE );
+}
+
+/*
+ * swaps the role of the two y-textures (read-only and write-only)
+ */
+void swap( void )
+{
+    writeTex = 1 - writeTex;
+    readTex  = 1 - writeTex;
+}
+
+/*
+ * Sets up a floating point texture with NEAREST filtering.
+ * (mipmaps etc. are unsupported for floating point textures)
+ */
+void setupTexture(const GLuint texID, int x, int y)
+{
+    /* make active and bind */
+    glBindTexture(texTarget,texID);
+
+    /* turn off filtering and wrap modes */
+    glTexParameteri(texTarget, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(texTarget, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_CLAMP);
+    glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_CLAMP);
+
+    /* define texture with floating point format */
+    glTexImage2D( texTarget, 0, texInternalFormat, x, y, 0, texFormat, 
+                  GL_FLOAT, 0 );
+
+    /* check if that worked */
+    if (glGetError() != GL_NO_ERROR) {
+        LogPrint( LOG_CRIT, "<%d> glTexImage2D():\t\t\t [FAIL]", me );
+        exit(1);
+    } else {
+        LogPrint( LOG_NOTICE, "<%d> glTexImage2D():\t\t\t [PASS]", me );
+    }
+}
+
+/*
+ * creates textures and populates the input texture
+ */
+void createTextures(int x, int y)
+{
+    /*
+     * pingpong needs two textures, alternatingly read-only and
+     * write-only, input is just read-only 
+     */
+    glGenTextures(2, pingpongTexID);
+    glGenTextures(1, &inputTexID);
+
+    /* set up textures */
+    setupTexture(pingpongTexID[readTex], x, y);
+    setupTexture(pingpongTexID[writeTex], x, y);
+    setupTexture(inputTexID, x, y);
+
+    /* attach pingpong textures to FBO */
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT,
+                              attachmentpoints[writeTex], texTarget,
+                              pingpongTexID[writeTex], 0);
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT,
+                              attachmentpoints[readTex], texTarget,
+                              pingpongTexID[readTex], 0);
+
+    /* check if that worked */
+    if (!checkFramebufferStatus()) {
+        LogPrint( LOG_CRIT, "<%d> glFramebufferTexture2DEXT():\t [FAIL]", me );
+        exit(1);
+    } else {
+        LogPrint( LOG_NOTICE, "<%d> glFramebufferTexture2DEXT():\t [PASS]", 
+                  me );
+    }
+}
+
+void loadFrame(float *data, int x, int y)
+{
+    /* transfer data vector to input texture */
+    glBindTexture(texTarget, inputTexID);
+    glTexSubImage2D(texTarget, 0, 0, 0, x, y, texFormat, GL_FLOAT, data);
+
+    /* check if something went completely wrong */
+    checkGLErrors("createTextures()");
 }
 
 /*
