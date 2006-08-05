@@ -60,21 +60,14 @@ void decode(char *input_filename, int frames)
     AVCodecContext *ccx = NULL;
     AVCodec        *codec = NULL;
 
-    AVFormatParameters params;
     AVPicture       pict;
     AVPacket        pkt;
     AVFrame        *frame = avcodec_alloc_frame();
-
-    int             frameCount = 0;
 
     /*
      * Open the input file. 
      */
     LogPrint( LOG_NOTICE, "Opening file: %s for reading", input_filename );
-#if 0
-    err = av_open_input_file(&fcx, input_filename, NULL, 0, &params);
-#endif
-    (void)params;
     err = av_open_input_file(&fcx, input_filename, NULL, 0, NULL);
     if (err < 0) {
         LogPrint(LOG_CRIT, "Can't open file: %s (%d)", input_filename, err);
@@ -120,7 +113,7 @@ void decode(char *input_filename, int frames)
     /*
      * Decode proper 
      */
-    while (frames == 0 || frameCount < frames ) {
+    while (frames == 0 || counter < frames ) {
         /*
          * Read a frame/packet. 
          */
@@ -157,7 +150,6 @@ void decode(char *input_filename, int frames)
                 save_ppm(pict.data[0], ccx->width, ccx->height, 3, name);
 
                 counter++;
-                frameCount++;
             }
 
             av_free_packet(&pkt);
