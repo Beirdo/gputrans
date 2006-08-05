@@ -69,9 +69,13 @@ void decode(char *input_filename)
      * Open the input file. 
      */
     LogPrint( LOG_NOTICE, "Opening file: %s for reading", input_filename );
+#if 0
     err = av_open_input_file(&fcx, input_filename, NULL, 0, &params);
+#endif
+    (void)params;
+    err = av_open_input_file(&fcx, input_filename, NULL, 0, NULL);
     if (err < 0) {
-        LogPrint(LOG_CRIT, "Can't open file: %s", input_filename);
+        LogPrint(LOG_CRIT, "Can't open file: %s (%d)", input_filename, err);
         exit(-1);
     }
 
@@ -108,6 +112,8 @@ void decode(char *input_filename)
         LogPrintNoArg( LOG_CRIT, "Video stream not found." );
         exit(-1);
     }
+
+     dump_format(fcx, 0, input_filename, 0);
 
     /*
      * Decode proper 
@@ -178,7 +184,7 @@ void save_ppm(const uint8_t * rgb, size_t cols, size_t rows, int pixsize,
         return;
     }
 
-    fd = open( file, O_CREAT | O_TRUNC, 0644 );
+    fd = open( file, O_CREAT | O_WRONLY, 0644 );
     switch (pixsize) {
     case 1:
         write( fd, "P5\n", 3 );
@@ -191,7 +197,7 @@ void save_ppm(const uint8_t * rgb, size_t cols, size_t rows, int pixsize,
         exit(-1);
     }
 
-    sprintf( string, "%ld %ld\n%c\n", (long)cols, (long)rows, 255 );
+    sprintf( string, "%ld %ld\n%d\n", (long)cols, (long)rows, 255 );
     write( fd, string, strlen(string) );
     write( fd, (const char *) rgb, rows * cols * pixsize );
 

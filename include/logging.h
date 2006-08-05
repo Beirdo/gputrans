@@ -31,6 +31,7 @@
 #define logging_h_
 
 #include <sys/types.h>
+#include <sys/time.h>
 #include "environment.h"
 
 /* CVS generated ID string (optional for h files) */
