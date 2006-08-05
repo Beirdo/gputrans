@@ -56,7 +56,7 @@ bool checkFramebufferStatus( void );
 void swap( void );
 void setupTexture(const GLuint texID, int x, int y);
 void createTextures(int x, int y);
-void loadFrame(float *data, int x, int y);
+void loadFrame(uint32 *data, int x, int y);
 
 extern int          idShm, idSem;
 extern char        *shmBlock;
@@ -64,6 +64,7 @@ static sharedMem_t *sharedMem;
 static cardInfo_t  *cardInfo;
 static int          me;
 static bool         initialized = FALSE;
+static int          width, height;
 
 GLuint              glutWindowHandle;
 GLuint              fb;
@@ -90,6 +91,9 @@ void do_child( int childNum )
     QueueMsg_t      type;
     int             len;
     ChildMsg_t     *message;
+
+    (void)width;
+    (void)height;
 
     shmBlock = NULL;
     atexit( SoftExitChild );
@@ -388,11 +392,12 @@ void createTextures(int x, int y)
     }
 }
 
-void loadFrame(float *data, int x, int y)
+void loadFrame(uint32 *data, int x, int y)
 {
     /* transfer data vector to input texture */
     glBindTexture(texTarget, inputTexID);
-    glTexSubImage2D(texTarget, 0, 0, 0, x, y, texFormat, GL_FLOAT, data);
+    glTexSubImage2D(texTarget, 0, 0, 0, x, y, texFormat, 
+                    GL_UNSIGNED_INT_8_8_8_8, data);
 
     /* check if something went completely wrong */
     checkGLErrors("createTextures()");
