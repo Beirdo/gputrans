@@ -46,7 +46,7 @@ void save_ppm(const uint8_t * rgb, size_t cols, size_t rows, int pixsize,
 static char ident[] _UNUSED_ = 
     "$Id$";
 
-void decode(char *input_filename)
+void decode(char *input_filename, int frames)
 {
     int             err = 0;
     int             i = 0;
@@ -64,6 +64,8 @@ void decode(char *input_filename)
     AVPicture       pict;
     AVPacket        pkt;
     AVFrame        *frame = avcodec_alloc_frame();
+
+    int             frameCount = 0;
 
     /*
      * Open the input file. 
@@ -118,7 +120,7 @@ void decode(char *input_filename)
     /*
      * Decode proper 
      */
-    while (1) {
+    while (frames == 0 || frameCount < frames ) {
         /*
          * Read a frame/packet. 
          */
@@ -155,6 +157,7 @@ void decode(char *input_filename)
                 save_ppm(pict.data[0], ccx->width, ccx->height, 3, name);
 
                 counter++;
+                frameCount++;
             }
 
             av_free_packet(&pkt);

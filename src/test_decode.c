@@ -44,7 +44,7 @@ static char ident[] _UNUSED_ =
     "$Id$";
 
 int main( int argc, char **argv );
-void decode( char *input_filename );
+void decode( char *input_filename, int frames );
 void SoftExitParent( void );
 
 int main(int argc, char **argv)
@@ -59,7 +59,7 @@ int main(int argc, char **argv)
 
     av_register_all();
 
-    decode(argv[1]);
+    decode(argv[1], 100);
 
     while (len >= 0) {
         type = Q_MSG_LOG;
