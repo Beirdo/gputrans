@@ -92,6 +92,7 @@ void do_child( int childNum )
     int             len;
     ChildMsg_t     *message;
     bool            done;
+    FrameDoneMsg_t  frameMsg;
 
     (void)width;
     (void)height;
@@ -104,6 +105,7 @@ void do_child( int childNum )
     cardInfo = &sharedMem->cardInfo[childNum];
     argv[2] = cardInfo->display;
     me = childNum;
+    frameMsg.childNum = childNum;
 
     glutInit( &argc, argv );
     glutWindowHandle = glutCreateWindow( "gputrans" );
@@ -140,14 +142,13 @@ void do_child( int childNum )
             queueSendBinary( Q_MSG_RENDER_READY, &childNum, sizeof(childNum) );
             break;
         case CHILD_RENDER_FRAME:
+            frameMsg.frameNum = message->payload.renderFrame.frameNum;
             LogPrint( LOG_NOTICE, "<%d> Received Frame #%d (index %d, prev %d)",
                                   childNum, 
                                   message->payload.renderFrame.frameNum,
                                   message->payload.renderFrame.indexIn,
                                   message->payload.renderFrame.indexInPrev );
-            queueSendBinary( Q_MSG_FRAME_DONE, &message->payload.renderFrame, 
-                             sizeof(message->payload.renderFrame) );
-            done = TRUE;
+            queueSendBinary( Q_MSG_FRAME_DONE, &frameMsg, sizeof( frameMsg ) );
             break;
         default:
             break;

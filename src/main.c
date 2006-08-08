@@ -58,6 +58,8 @@ void signal_child( int signum );
 void SoftExitParent( void );
 void do_child( int childNum );
 void readConfigFile( void );
+ChildMsg_t *getNextFrame( void );
+void sendFrame( int childNum );
 
 int                     idShm, idSem;
 extern int              idFrame;
@@ -82,8 +84,8 @@ int main( int argc, char **argv )
     int                 len;
     int                 childNum;
     ChildMsg_t          msgOut;
-    ChildMsg_t         *msgFrame;
     cardInfo_t         *cardInfo;
+    FrameDoneMsg_t     *frameMsg;
 
     queueInit();
     logging_initialize();
@@ -163,17 +165,55 @@ int main( int argc, char **argv )
         case Q_MSG_RENDER_READY:
             childNum = *(int *)msg;
             LogPrint( LOG_NOTICE, "Child %d is ready to render", childNum );
-            msgFrame = (ChildMsg_t *)QueueDequeueItem( ChildMsgQ, -1 );
-            queueSendBinary( Q_MSG_CLIENT_START + childNum, 
-                             (char *)msgFrame, 
-                             sizeof(ChildMsg_t) + 
-                             ELEMSIZE( renderFrame, ChildMsgPayload_t ) - 
-                             ELEMSIZE( payload, ChildMsg_t ) );
+            sendFrame( childNum );
+            break;
+        case Q_MSG_FRAME_DONE:
+            frameMsg = (FrameDoneMsg_t *)msg;
+            LogPrint( LOG_NOTICE, "Child %d is done frame %d", 
+                                  frameMsg->childNum, frameMsg->frameNum );
+            sendFrame( frameMsg->childNum );
             break;
         default:
             break;
         }
     }
+}
+
+ChildMsg_t *getNextFrame( void )
+{
+    ChildMsg_t         *msg;
+
+    msg = (ChildMsg_t *)QueueDequeueItem( ChildMsgQ, -1 );
+    if( msg->payload.renderFrame.frameNum == -1 ) {
+        /* No more frames, put this back for the next client */
+        QueueEnqueueItem( ChildMsgQ, msg );
+        return( NULL );
+    }
+    return( msg );
+}
+        
+void sendFrame( int childNum )
+{
+    ChildMsg_t          msgOut;
+    ChildMsg_t         *msgFrame;
+
+    msgFrame = getNextFrame();
+    if( !msgFrame ) {
+        LogPrint( LOG_NOTICE, "No more frames, shutting down child %d", 
+                              childNum );
+        msgOut.type = CHILD_EXIT;
+        queueSendBinary( Q_MSG_CLIENT_START + childNum, 
+                         (char *)&msgOut, 
+                         ELEMSIZE(type, ChildMsg_t) );
+        return;
+    }
+                         
+    queueSendBinary( Q_MSG_CLIENT_START + childNum, 
+                     (char *)msgFrame, 
+                     sizeof(ChildMsg_t) + 
+                     ELEMSIZE( renderFrame, ChildMsgPayload_t ) - 
+                     ELEMSIZE( payload, ChildMsg_t ) );
+    free( msgFrame );
 }
 
 void signal_handler( int signum )

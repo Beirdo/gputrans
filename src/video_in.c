@@ -333,6 +333,12 @@ void *VideoInThread( void *arg )
 
         if( !getFrame( pict, PIX_FMT_YUV444P ) ) {
             done = TRUE;
+            msg = (ChildMsg_t *)malloc(sizeof(ChildMsg_t));
+            msg->type = CHILD_RENDER_FRAME;
+            msg->payload.renderFrame.frameNum    = -1;
+            msg->payload.renderFrame.indexIn     = -1;
+            msg->payload.renderFrame.indexInPrev = -1;
+            QueueEnqueueItem( ChildMsgQ, (QueueItem_t)msg );
             continue;
         }
 

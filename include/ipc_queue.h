@@ -75,6 +75,11 @@ typedef struct {
     ChildMsgPayload_t   payload;
 } ChildMsg_t;
 
+typedef struct {
+    int                 childNum;
+    int                 frameNum;
+} FrameDoneMsg_t;
+
 void queueInit( void );
 void queueDestroy( void );
 void queueSendText( QueueMsg_t type, char *text );
