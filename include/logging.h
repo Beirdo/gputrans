@@ -42,15 +42,15 @@ extern "C" {
 #endif
 
 #define LogLocalPrint(level, format, ...) \
-    LogPrintLine(level, __FILE__, __LINE__, (char *)__FUNCTION__, format, \
-                 ## __VA_ARGS__)
+    LogLocalPrintLine(level, __FILE__, __LINE__, (char *)__FUNCTION__, format, \
+                      ## __VA_ARGS__)
 
 #define LogLocalPrintNoArg(level, string) \
-    LogPrintLine(level, __FILE__, __LINE__, (char *)__FUNCTION__, string)
+    LogLocalPrintLine(level, __FILE__, __LINE__, (char *)__FUNCTION__, string)
 
 /* Define the external prototype */
-void LogPrintLine( LogLevel_t level, char *file, int line, char *function, 
-                   char *format, ... );
+void LogLocalPrintLine( LogLevel_t level, char *file, int line, char *function, 
+                        char *format, ... );
 bool LogFileAdd( char * filename );
 bool LogStdoutAdd( void );
 bool LogSyslogAdd( int facility );

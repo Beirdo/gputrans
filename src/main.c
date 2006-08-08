@@ -166,7 +166,7 @@ void signal_handler( int signum )
 {
     extern const char *const sys_siglist[];
 
-    LogPrint( LOG_CRIT, "Received signal: %s", sys_siglist[signum] );
+    LogLocalPrint( LOG_CRIT, "Received signal: %s", sys_siglist[signum] );
     exit( 0 );
 }
 
@@ -198,18 +198,19 @@ void signal_child( int signum )
 
         if( WIFEXITED(status) ) {
             childCount--;
-            LogPrint( LOG_CRIT, "Child %d (pid %d) exited (ret=%d) - %d left", 
-                                childNum, pid, WEXITSTATUS(status), 
-                                childCount );
+            LogLocalPrint( LOG_CRIT, "Child %d (pid %d) exited (ret=%d) - %d "
+                                     "left", childNum, pid, WEXITSTATUS(status),
+                                             childCount );
         } else if( WIFSIGNALED(status) ) {
             childCount--;
-            LogPrint( LOG_CRIT, "Child %d (pid %d) exited (%s) - %d left", 
-                                childNum, pid, sys_siglist[WTERMSIG(status)], 
-                                childCount );
+            LogLocalPrint( LOG_CRIT, "Child %d (pid %d) exited (%s) - %d left", 
+                                     childNum, pid, 
+                                     sys_siglist[WTERMSIG(status)], 
+                                     childCount );
         }
 
         if( childCount <= 0 ) {
-            LogPrintNoArg( LOG_CRIT, "All children exited, exiting" );
+            LogLocalPrintNoArg( LOG_CRIT, "All children exited, exiting" );
             exit( 0 );
         }
     }
@@ -238,6 +239,8 @@ void SoftExitParent( void )
     shmdt( shmBlock );
     shmctl( idShm, IPC_RMID, NULL );
     queueDestroy();
+    /* Give the LogThread time to flush the last messages */
+    sleep(2);
     _exit( 0 );
 }
 
