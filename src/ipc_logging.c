@@ -42,6 +42,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "ipc_queue.h"
+#include "queue.h"
 
 
 /* INTERNAL MACRO DEFINITIONS */
@@ -54,6 +55,7 @@ LogLevel_t LogLevel = LOG_UNKNOWN;  /**< The log level mask to apply, messages
                                          must be at at least this priority to
                                          be output */
 LoggingItem_t item;
+extern QueueObject_t  *LoggingQ;
 
 /**
  * @brief Formats and enqueues a log message for the Logging thread
@@ -68,8 +70,8 @@ LoggingItem_t item;
  * go onto the LoggingQ which is then read by the Logging thread.  When this
  * function returns, all strings passed in can be reused or freed.
  */
-void LogPrintLine( LogLevel_t level, char *file, int line, char *function,
-                   char *format, ... )
+void LogIpcPrintLine( LogLevel_t level, char *file, int line, char *function,
+                      char *format, ... )
 {
     va_list arguments;
 
@@ -110,26 +112,13 @@ void LogPrintLine( LogLevel_t level, char *file, int line, char *function,
  */
 void LogShowLine( LoggingItem_t *logItem )
 {
-    struct tm           ts;
-    char                usPart[9];
-    char                timestamp[TIMESTAMP_MAX];
+    LoggingItem_t      *item;
 
-    if( !logItem ) {
-        return;
-    }
-
-    localtime_r( (const time_t *)&(logItem->tv.tv_sec), &ts );
-    strftime( timestamp, TIMESTAMP_MAX-8, "%Y-%b-%d %H:%M:%S",
-              (const struct tm *)&ts );
-    snprintf( usPart, 9, ".%06d ", (int)(logItem->tv.tv_usec) );
-    strcat( timestamp, usPart );
-
-    printf( "%s [%d] %s\n", timestamp, logItem->pidId, logItem->message );
+    item = (LoggingItem_t *)malloc(sizeof(LoggingItem_t));
+    memcpy( item, logItem, sizeof(LoggingItem_t) );
+    QueueEnqueueItem( LoggingQ, item );
 }
 
-void *LogThread( void *arg )
-{
-}
 
 /*
  * vim:ts=4:sw=4:ai:et:si:sts=4

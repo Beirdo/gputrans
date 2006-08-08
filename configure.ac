@@ -27,6 +27,7 @@ AC_DEFUN([GJH_CHECK_LIB],
 GJH_CHECK_LIB(glut, glutInit)
 GJH_CHECK_LIB(GLEW, glewInit)
 GJH_CHECK_LIB(GL,   glAccum)
+GJH_CHECK_LIB(pthread, pthread_create)
 
 # Check version of GLEW >= 1.3.1 (where framebuffer objects got supported)
 MIN_GLEW_VERSION='1.3.1'
@@ -87,7 +88,8 @@ LIBS="${FFMPEG_LIBS} ${LIBS}"
 # Checks for header files.
 AC_HEADER_STDC
 AC_HEADER_SYS_WAIT
-AC_CHECK_HEADERS([fcntl.h inttypes.h stdlib.h string.h sys/time.h unistd.h])
+AC_CHECK_HEADERS([fcntl.h inttypes.h stdlib.h string.h sys/time.h syslog.h])
+AC_CHECK_HEADERS([unistd.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_HEADER_STDBOOL
@@ -103,6 +105,6 @@ AC_FUNC_FORK
 AC_FUNC_MALLOC
 AC_TYPE_SIGNAL
 AC_FUNC_STRFTIME
-AC_CHECK_FUNCS([atexit gettimeofday localtime_r memset strchr])
+AC_CHECK_FUNCS([atexit gettimeofday localtime_r memmove memset strchr strdup])
 
 AC_OUTPUT([Makefile src/Makefile example/Makefile])

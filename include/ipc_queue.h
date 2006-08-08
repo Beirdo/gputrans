@@ -31,7 +31,7 @@
 #include "environment.h"
 
 /* SVN generated ID string */
-static char queue_h_ident[] _UNUSED_ = 
+static char ipc_queue_h_ident[] _UNUSED_ = 
     "$Id$";
 
 

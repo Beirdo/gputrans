@@ -27,50 +27,38 @@
 *
 *
 *--------------------------------------------------------*/
-#ifndef ipc_logging_h_
-#define ipc_logging_h_
-
-#include <sys/types.h>
-#include <sys/time.h>
-#include "environment.h"
+#ifndef logging_h_
+#define logging_h_
 
 /* CVS generated ID string (optional for h files) */
-static char ipc_logging_h_ident[] _UNUSED_ = 
+static char logging_h_ident[] _UNUSED_ = 
     "$Id$";
 
 /* Define the log levels (lower number is higher priority) */
 #include "logging_common.h"
 
-typedef struct
-{
-    LogLevel_t          level;
-    pid_t               pidId;
-    char                file[128];
-    int                 line;
-    char                function[128];
-    struct timeval      tv;
-    char                message[LOGLINE_MAX];
-} LoggingItem_t;
-
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#define LogLocalPrint(level, format, ...) \
+    LogPrintLine(level, __FILE__, __LINE__, (char *)__FUNCTION__, format, \
+                 ## __VA_ARGS__)
 
-#define LogPrint(level, format, ...) \
-    LogIpcPrintLine(level, __FILE__, __LINE__, (char *)__FUNCTION__, format, \
-                    ## __VA_ARGS__)
-
-#define LogPrintNoArg(level, string) \
-    LogIpcPrintLine(level, __FILE__, __LINE__, (char *)__FUNCTION__, string)
-
+#define LogLocalPrintNoArg(level, string) \
+    LogPrintLine(level, __FILE__, __LINE__, (char *)__FUNCTION__, string)
 
 /* Define the external prototype */
-void LogIpcPrintLine( LogLevel_t level, char *file, int line, char *function, 
-                      char *format, ... );
-void LogShowLine( LoggingItem_t *logItem );
+void LogPrintLine( LogLevel_t level, char *file, int line, char *function, 
+                   char *format, ... );
+bool LogFileAdd( char * filename );
+bool LogStdoutAdd( void );
+bool LogSyslogAdd( int facility );
+bool LogFileRemove( char *filename );
+bool LogTcpAdd( int fd );
+bool LogTcpRemove( int fd );
 
+void logging_initialize( void );
 
 #ifdef __cplusplus
 }

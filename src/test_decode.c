@@ -49,6 +49,8 @@ void SoftExitParent( void );
 
 int                 numChildren;
 AVPicture           pict;
+bool                Debug = FALSE;
+bool                GlobalAbort = FALSE;
 
 int main(int argc, char **argv)
 {

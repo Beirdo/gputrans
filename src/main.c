@@ -42,6 +42,8 @@
 #include "ipc_logging.h"
 #include "shared_mem.h"
 #include "video.h"
+#include "logging.h"
+#include "queue.h"
 
 
 /* SVN generated ID string */
@@ -64,6 +66,8 @@ char               *shmBlock;
 int                 numChildren = -1;
 static sharedMem_t *sharedMem;
 pthread_t           logThread;
+bool                Debug = FALSE;
+bool                GlobalAbort = FALSE;
 
 
 int main( int argc, char **argv )
@@ -80,7 +84,7 @@ int main( int argc, char **argv )
 
     queueInit();
     initFfmpeg();
-    pthread_create( &logThread, NULL, LogThread, NULL );
+    logging_initialize();
 
     signal( SIGINT, signal_handler );
     signal( SIGCHLD, signal_child );

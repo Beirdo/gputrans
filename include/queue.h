@@ -22,55 +22,53 @@
 *
 * Copyright 2006 Gavin Hurlbut
 * All rights reserved
-*
-* Comments :
-*
-*
-*--------------------------------------------------------*/
-#ifndef ipc_logging_h_
-#define ipc_logging_h_
+*/
 
-#include <sys/types.h>
-#include <sys/time.h>
+#ifndef queue_h_
+#define queue_h_
+
 #include "environment.h"
+#include <pthread.h>
+#include "linked_list.h"
 
 /* CVS generated ID string (optional for h files) */
-static char ipc_logging_h_ident[] _UNUSED_ = 
+static char queue_h_ident[] _UNUSED_ = 
     "$Id$";
 
-/* Define the log levels (lower number is higher priority) */
-#include "logging_common.h"
 
-typedef struct
-{
-    LogLevel_t          level;
-    pid_t               pidId;
-    char                file[128];
-    int                 line;
-    char                function[128];
-    struct timeval      tv;
-    char                message[LOGLINE_MAX];
-} LoggingItem_t;
+typedef void * QueueItem_t;
+typedef struct 
+{ 
+    LinkedListItem_t linkage;
+    uint32 numElements;
+    uint32 numMask;
+    uint32 head;
+    uint32 tail;
+    QueueItem_t *itemTable;
+    pthread_mutex_t *mutex;
+    bool full;
+    pthread_cond_t *cNotFull;
+    bool empty;
+    pthread_cond_t *cNotEmpty;
+} QueueObject_t;
 
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+/* Function Prototypes */
+QueueObject_t * QueueCreate( uint32 numElements );
+bool QueueEnqueueItem( QueueObject_t *queue, QueueItem_t item ); 
+QueueItem_t QueueDequeueItem( QueueObject_t *queue, int32 ms_timeout );
+void QueueClear( QueueObject_t *queue, bool freeItems );
+uint32 QueueUsed( QueueObject_t *queue );
 
-#define LogPrint(level, format, ...) \
-    LogIpcPrintLine(level, __FILE__, __LINE__, (char *)__FUNCTION__, format, \
-                    ## __VA_ARGS__)
-
-#define LogPrintNoArg(level, string) \
-    LogIpcPrintLine(level, __FILE__, __LINE__, (char *)__FUNCTION__, string)
-
-
-/* Define the external prototype */
-void LogIpcPrintLine( LogLevel_t level, char *file, int line, char *function, 
-                      char *format, ... );
-void LogShowLine( LoggingItem_t *logItem );
-
+void QueueDestroy( QueueObject_t *queue );
+void QueueLock( QueueObject_t *queue );
+void QueueUnlock( QueueObject_t *queue );
+uint32 QueueRemoveItem( QueueObject_t *queue, uint32 index, int locked );
+void QueueKillAll( void );
 
 #ifdef __cplusplus
 }

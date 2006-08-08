@@ -23,54 +23,58 @@
 * Copyright 2006 Gavin Hurlbut
 * All rights reserved
 *
-* Comments :
-*
-*
-*--------------------------------------------------------*/
-#ifndef ipc_logging_h_
-#define ipc_logging_h_
+*/
 
-#include <sys/types.h>
-#include <sys/time.h>
+#ifndef linked_list_h_
+#define linked_list_h_
+
 #include "environment.h"
 
 /* CVS generated ID string (optional for h files) */
-static char ipc_logging_h_ident[] _UNUSED_ = 
+static char linked_list_h_ident[] _UNUSED_ = 
     "$Id$";
 
-/* Define the log levels (lower number is higher priority) */
-#include "logging_common.h"
 
-typedef struct
+struct _LinkedList_t;
+struct _LinkedListItem_t;
+
+/* This *MUST* be embedded at the BEGINNING of any type that will be used in a 
+ * linked list 
+ */
+typedef struct _LinkedListItem_t
 {
-    LogLevel_t          level;
-    pid_t               pidId;
-    char                file[128];
-    int                 line;
-    char                function[128];
-    struct timeval      tv;
-    char                message[LOGLINE_MAX];
-} LoggingItem_t;
+    struct _LinkedListItem_t *prev;
+    struct _LinkedListItem_t *next;
+    struct _LinkedList_t     *list;
+} LinkedListItem_t;
+
+typedef struct _LinkedList_t
+{
+    LinkedListItem_t *head;
+    LinkedListItem_t *tail;
+    pthread_mutex_t  mutex;
+} LinkedList_t;
+
+typedef enum
+{
+    AT_HEAD,
+    AT_TAIL
+} LinkedListLoc_t;
 
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-
-#define LogPrint(level, format, ...) \
-    LogIpcPrintLine(level, __FILE__, __LINE__, (char *)__FUNCTION__, format, \
-                    ## __VA_ARGS__)
-
-#define LogPrintNoArg(level, string) \
-    LogIpcPrintLine(level, __FILE__, __LINE__, (char *)__FUNCTION__, string)
-
-
-/* Define the external prototype */
-void LogIpcPrintLine( LogLevel_t level, char *file, int line, char *function, 
-                      char *format, ... );
-void LogShowLine( LoggingItem_t *logItem );
-
+/* Function Prototypes */
+LinkedList_t *LinkedListCreate( void );
+void LinkedListDestroy( LinkedList_t *list );
+void LinkedListLock( LinkedList_t *list );
+void LinkedListUnlock( LinkedList_t *list );
+void LinkedListAdd( LinkedList_t *list, LinkedListItem_t *item, 
+                    Locked_t locked, LinkedListLoc_t location );
+void LinkedListRemove( LinkedList_t *list, LinkedListItem_t *item, 
+                       Locked_t locked );
 
 #ifdef __cplusplus
 }

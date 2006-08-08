@@ -27,54 +27,49 @@
 *
 *
 *--------------------------------------------------------*/
-#ifndef ipc_logging_h_
-#define ipc_logging_h_
+#ifndef logging_common_h_
+#define logging_common_h_
 
-#include <sys/types.h>
-#include <sys/time.h>
 #include "environment.h"
 
 /* CVS generated ID string (optional for h files) */
-static char ipc_logging_h_ident[] _UNUSED_ = 
+static char logging_common_h_ident[] _UNUSED_ = 
     "$Id$";
 
 /* Define the log levels (lower number is higher priority) */
-#include "logging_common.h"
 
-typedef struct
+typedef enum
 {
-    LogLevel_t          level;
-    pid_t               pidId;
-    char                file[128];
-    int                 line;
-    char                function[128];
-    struct timeval      tv;
-    char                message[LOGLINE_MAX];
-} LoggingItem_t;
+    LOG_EMERG = 0,
+    LOG_ALERT,
+    LOG_CRIT,
+    LOG_ERR,
+    LOG_WARNING,
+    LOG_NOTICE,
+    LOG_INFO,
+    LOG_DEBUG,
+    LOG_UNKNOWN
+} LogLevel_t;
 
-
-#ifdef __cplusplus
-extern "C" {
+#ifdef _LogLevelNames_
+char *LogLevelNames[] =
+{
+    "LOG_EMERG",
+    "LOG_ALERT",
+    "LOG_CRIT",
+    "LOG_ERR",
+    "LOG_WARNING",
+    "LOG_NOTICE",
+    "LOG_INFO",
+    "LOG_DEBUG",
+    "LOG_UNKNOWN"
+};
+int LogLevelNameCount = NELEMENTS(LogLevelNames);
+#else
+extern char *LogLevelNames[];
+extern int LogLevelNameCount;
 #endif
-
-
-#define LogPrint(level, format, ...) \
-    LogIpcPrintLine(level, __FILE__, __LINE__, (char *)__FUNCTION__, format, \
-                    ## __VA_ARGS__)
-
-#define LogPrintNoArg(level, string) \
-    LogIpcPrintLine(level, __FILE__, __LINE__, (char *)__FUNCTION__, string)
-
-
-/* Define the external prototype */
-void LogIpcPrintLine( LogLevel_t level, char *file, int line, char *function, 
-                      char *format, ... );
-void LogShowLine( LoggingItem_t *logItem );
-
-
-#ifdef __cplusplus
-}
-#endif
+extern LogLevel_t LogLevel;
 
 #endif
 
