@@ -38,7 +38,7 @@
 #include <string.h>
 #include <ffmpeg/avcodec.h>
 #include <ffmpeg/avformat.h>
-#include "queue.h"
+#include "ipc_queue.h"
 #include "logging.h"
 #include "shared_mem.h"
 #include "video.h"

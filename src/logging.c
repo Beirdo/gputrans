@@ -41,7 +41,7 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-#include "queue.h"
+#include "ipc_queue.h"
 
 
 /* INTERNAL MACRO DEFINITIONS */
@@ -127,6 +127,9 @@ void LogShowLine( LoggingItem_t *logItem )
     printf( "%s [%d] %s\n", timestamp, logItem->pidId, logItem->message );
 }
 
+void *LogThread( void *arg )
+{
+}
 
 /*
  * vim:ts=4:sw=4:ai:et:si:sts=4

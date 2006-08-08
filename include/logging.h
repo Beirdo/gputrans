@@ -102,6 +102,8 @@ void LogPrintLine( LogLevel_t level, char *file, int line, char *function,
                    char *format, ... );
 void LogShowLine( LoggingItem_t *logItem );
 
+void *LogThread( void *arg );
+
 #ifdef __cplusplus
 }
 #endif

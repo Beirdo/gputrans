@@ -33,7 +33,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include "queue.h"
+#include "ipc_queue.h"
 
 
 /* SVN generated ID string */

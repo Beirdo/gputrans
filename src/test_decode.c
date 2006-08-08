@@ -35,7 +35,7 @@
 #include <unistd.h>
 #include <ffmpeg/avformat.h>
 #include <ffmpeg/avcodec.h>
-#include "queue.h"
+#include "ipc_queue.h"
 #include "logging.h"
 #include "video.h"
 

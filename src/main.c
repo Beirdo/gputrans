@@ -37,7 +37,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
-#include "queue.h"
+#include <pthread.h>
+#include "ipc_queue.h"
 #include "logging.h"
 #include "shared_mem.h"
 #include "video.h"
@@ -62,6 +63,7 @@ int                 childCount = 0;
 char               *shmBlock;
 int                 numChildren = -1;
 static sharedMem_t *sharedMem;
+pthread_t           logThread;
 
 
 int main( int argc, char **argv )
@@ -78,6 +80,7 @@ int main( int argc, char **argv )
 
     queueInit();
     initFfmpeg();
+    pthread_create( &logThread, NULL, LogThread, NULL );
 
     signal( SIGINT, signal_handler );
     signal( SIGCHLD, signal_child );
