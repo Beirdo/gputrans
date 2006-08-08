@@ -25,8 +25,8 @@
 *
 */
 
-#ifndef _queue_h
-#define _queue_h
+#ifndef ipc_queue_h
+#define ipc_queue_h
 
 #include "environment.h"
 

@@ -27,8 +27,8 @@
 *
 *
 *--------------------------------------------------------*/
-#ifndef logging_h_
-#define logging_h_
+#ifndef ipc_logging_h_
+#define ipc_logging_h_
 
 #include <sys/types.h>
 #include <sys/time.h>

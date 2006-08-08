@@ -33,7 +33,7 @@
 /* INCLUDE FILES */
 #include "environment.h"
 #define _LogLevelNames_
-#include "logging.h"
+#include "ipc_logging.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <sys/time.h>

@@ -36,7 +36,7 @@
 #include <ffmpeg/avformat.h>
 #include <ffmpeg/avcodec.h>
 #include "ipc_queue.h"
-#include "logging.h"
+#include "ipc_logging.h"
 #include "video.h"
 
 

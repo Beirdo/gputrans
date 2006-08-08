@@ -38,7 +38,7 @@
 #include <GL/glew.h>
 #include <GL/glut.h>
 #include "ipc_queue.h"
-#include "logging.h"
+#include "ipc_logging.h"
 #include "shared_mem.h"
 
 
