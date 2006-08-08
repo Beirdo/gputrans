@@ -52,9 +52,21 @@ typedef enum {
     CHILD_RENDER_FRAME
 } ChildMsgType_t;
 
+typedef struct {
+    int             mode;
+    int             cols;
+    int             rows;
+} RenderMode_t;
+
+typedef struct {
+    int             frameNum;
+    int             indexIn;
+    int             indexOut;
+} RenderFrame_t;
+
 typedef union {
-    int                 mode;
-    int                 frameNum;
+    RenderMode_t        renderMode;
+    RenderFrame_t       renderFrame;
 } ChildMsgPayload_t;
 
 typedef struct {

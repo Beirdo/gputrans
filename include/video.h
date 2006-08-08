@@ -25,54 +25,31 @@
 *
 */
 
-#ifndef _shared_mem_h
-#define _shared_mem_h
+#ifndef _video_h
+#define _video_h
 
-#include <sys/types.h>
+#include <ffmpeg/avformat.h>
+#include <ffmpeg/avcodec.h>
+#include "shared_mem.h"
 
 /* SVN generated ID string */
-static char shared_mem_h_ident[] _UNUSED_ = 
+static char video_h_ident[] _UNUSED_ = 
     "$Id$";
 
-#define MAX_NUM_CARDS   8
+void openFile( char *input_filename, int *cols, int *rows );
+void save_ppm( const unsigned char *rgb, size_t cols, size_t rows, int pixsize,
+               const char *file );
+void frameToUnsignedInt( unsigned char *frame, unsigned int *buffer, int cols,
+                         int rows );
+void unsignedIntToFrame( unsigned int *buffer, unsigned char *frame, int cols,
+                         int rows );
+void initFfmpeg( void );
+void closeFfmpeg( AVPicture *pict );
+void initVideoIn( sharedMem_t *sharedMem, int cols, int rows );
+bool getFrame( AVPicture *pict, int pix_fmt );
+void decode( int frames );
 
-typedef struct {
-    bool        FBO;
-    bool        TextRect;
-    bool        NvFloat;
-} HasCap_t;
-
-typedef struct {
-    int         TexSize;
-    int         ViewportDim[2];
-    int         ColorAttach;
-} MaxCap_t;
-
-typedef struct {
-    int         childNum;
-    pid_t       pid;
-    int         workingOn;
-    char        display[16];
-    char        vendor[256];
-    char        renderer[256];
-    char        version[256];
-    MaxCap_t    max;
-    HasCap_t    have;
-} cardInfo_t;
-
-typedef struct {
-    int             frameIn;
-    int             frameOut;
-} structOffset_t;
-
-typedef struct {
-    structOffset_t  offsets;
-    cardInfo_t      cardInfo[MAX_NUM_CARDS];
-    int             frameSize;
-    int             frameCount;
-    int             frameCountIn;
-    int             frameCountOut;
-} sharedMem_t;
+extern int      idFrame;
 
 #endif
 

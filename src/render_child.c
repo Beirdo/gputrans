@@ -131,7 +131,7 @@ void do_child( int childNum )
         break;
     case CHILD_RENDER_MODE:
         LogPrint( LOG_NOTICE, "<%d> Entering rendering mode %d", childNum,
-                              message->payload.mode );
+                              message->payload.renderMode.mode );
         sleep(10);
         break;
     default:
@@ -167,7 +167,7 @@ void setupCardInfo( int childNum )
     cardInfo->pid = getpid();
 
     glGetIntegerv(GL_MAX_TEXTURE_SIZE,  &val[0]);
-    cardInfo->maxTexSize = val[0];
+    cardInfo->max.TexSize = val[0];
 
     string = glGetString(GL_VENDOR);
     strncpy( cardInfo->vendor, (char *)string, 
@@ -182,8 +182,8 @@ void setupCardInfo( int childNum )
              ELEMSIZE(version, cardInfo_t) );
 
     glGetIntegerv(GL_MAX_VIEWPORT_DIMS, &val[0]);
-    cardInfo->maxViewportDim[0] = val[0];
-    cardInfo->maxViewportDim[1] = val[1];
+    cardInfo->max.ViewportDim[0] = val[0];
+    cardInfo->max.ViewportDim[1] = val[1];
 
     LogPrint( LOG_NOTICE, "<%d> Display: %s", childNum, cardInfo->display );
     LogPrint( LOG_NOTICE, "<%d> Vendor: %s", childNum, cardInfo->vendor );
@@ -191,43 +191,43 @@ void setupCardInfo( int childNum )
                           cardInfo->renderer );
     LogPrint( LOG_NOTICE, "<%d> Version: %s", childNum, cardInfo->version );
     LogPrint( LOG_NOTICE, "<%d> Max Texture Size: %d", childNum, 
-                          cardInfo->maxTexSize );
+                          cardInfo->max.TexSize );
     LogPrint( LOG_NOTICE, "<%d> Max Viewport Dimensions: %dx%d", childNum, 
-                          cardInfo->maxViewportDim[0], 
-                          cardInfo->maxViewportDim[1]);
+                          cardInfo->max.ViewportDim[0], 
+                          cardInfo->max.ViewportDim[1]);
 
     /* GLEW_EXT_framebuffer_object doesn't seem to work */
     if( glGenFramebuffersEXT && glBindFramebufferEXT ) {
         LogPrint( LOG_NOTICE, "<%d> Supports framebuffer objects", 
                               childNum );
-        cardInfo->haveFBO = TRUE;
+        cardInfo->have.FBO = TRUE;
         glGetIntegerv(GL_MAX_COLOR_ATTACHMENTS_EXT, &val[0]);
-        cardInfo->maxColorAttach = val[0];
+        cardInfo->max.ColorAttach = val[0];
         LogPrint( LOG_NOTICE, "<%d> Max Color Attachments: %d", childNum, 
-                              cardInfo->maxColorAttach );
+                              cardInfo->max.ColorAttach );
     } else {
         LogPrint( LOG_NOTICE, "<%d> Does not support framebuffer objects", 
                               childNum );
-        cardInfo->haveFBO = FALSE;
+        cardInfo->have.FBO = FALSE;
     }
 
     if( GLEW_ARB_texture_rectangle ) {
         LogPrint( LOG_NOTICE, "<%d> Supports texture rectangles", 
                               childNum );
-        cardInfo->haveTextRect = TRUE;
+        cardInfo->have.TextRect = TRUE;
     } else {
         LogPrint( LOG_NOTICE, "<%d> Does not support texture rectangles",
                               childNum );
-        cardInfo->haveTextRect = FALSE;
+        cardInfo->have.TextRect = FALSE;
     }
 
     if( GLEW_NV_float_buffer ) {
         LogPrint( LOG_NOTICE, "<%d> Supports NV float buffers", childNum );
-        cardInfo->haveNvFloat = TRUE;
+        cardInfo->have.NvFloat = TRUE;
     } else {
         LogPrint( LOG_NOTICE, "<%d> Does not support NV float buffers",
                               childNum );
-        cardInfo->haveNvFloat = FALSE;
+        cardInfo->have.NvFloat = FALSE;
     }
 }
 

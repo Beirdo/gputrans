@@ -27,6 +27,10 @@
 
 #include "environment.h"
 #include <sys/types.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/sem.h>
+#include <sys/msg.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -37,32 +41,29 @@
 #include "queue.h"
 #include "logging.h"
 #include "shared_mem.h"
+#include "video.h"
 
-
-void save_ppm(const uint8_t * rgb, size_t cols, size_t rows, int pixsize,
-              const char *file);
 
 /* SVN generated ID string */
 static char ident[] _UNUSED_ = 
     "$Id$";
 
-void decode(char *input_filename, int frames)
+int                 idFrame;
+extern int          numChildren;
+unsigned char      *frameBlock;
+AVPicture          *avFrameIn;
+AVPicture          *avFrameOut;
+AVFrame            *frame;
+int                 video_index = -1;
+AVFormatContext    *fcx = NULL;
+AVCodecContext     *ccx = NULL;
+AVCodec            *codec = NULL;
+
+    
+void openFile( char *input_filename, int *cols, int *rows )
 {
-    int             err = 0;
-    int             i = 0;
-    int             counter = 0;
-    int             len1 = 0;
-    int             got_picture;
-    int             video_index = -1;
-    char            name[16];
-
-    AVFormatContext *fcx = NULL;
-    AVCodecContext *ccx = NULL;
-    AVCodec        *codec = NULL;
-
-    AVPicture       pict;
-    AVPacket        pkt;
-    AVFrame        *frame = avcodec_alloc_frame();
+    int             err;
+    int             i;
 
     /*
      * Open the input file. 
@@ -110,10 +111,18 @@ void decode(char *input_filename, int frames)
 
      dump_format(fcx, 0, input_filename, 0);
 
-    /*
-     * Decode proper 
-     */
-    while (frames == 0 || counter < frames ) {
+     *cols = ccx->width;
+     *rows = ccx->height;
+}
+
+
+bool getFrame( AVPicture *pict, int pix_fmt )
+{
+    bool            got_picture = FALSE;
+
+    AVPacket        pkt;
+
+    while ( !got_picture ) {
         /*
          * Read a frame/packet. 
          */
@@ -128,49 +137,40 @@ void decode(char *input_filename, int frames)
             /*
              * Decode the packet 
              */
-            len1 = avcodec_decode_video(ccx, frame, &got_picture,
-                                        pkt.data, pkt.size);
+            avcodec_decode_video(ccx, frame, &got_picture, pkt.data, pkt.size);
 
             if (got_picture) {
-                /*
-                 * Allocate AVPicture the first time through. 
+                /* Got a frame, extract the video, converting to the desired
+                 * output format (normally PIX_FMT_YUV444P, but uses
+                 * PIX_FMT_RGB24 for test_decode)
                  */
-                if (counter == 0) {
-                    avpicture_alloc(&pict, PIX_FMT_RGB24,
-                                    ccx->width, ccx->height);
-                }
-
-                img_convert(&pict, PIX_FMT_RGB24, (AVPicture *) frame,
+                img_convert(pict, pix_fmt, (AVPicture *)frame,
                             ccx->pix_fmt, ccx->width, ccx->height);
-
-                /*
-                 * Visual effects: display image (save to disk, for now). 
-                 */
-                sprintf( name, "%05d.ppm", counter );
-                save_ppm(pict.data[0], ccx->width, ccx->height, 3, name);
-
-                counter++;
             }
 
-            av_free_packet(&pkt);
         }
+        av_free_packet(&pkt);
     }
 
-    /*
-     * Clean up 
-     */
-    avpicture_free(&pict);
+    return( got_picture );
+}
+
+
+void closeFfmpeg( AVPicture *pict )
+{
+    if( pict ) {
+        avpicture_free(pict);
+    }
     av_free(frame);
     av_close_input_file(fcx);
 }
-
 
 /*
  * Save the raw rgb data to a stream (either cout, or to a file)
  * (pgm/ppm). 
  */
-void save_ppm(const uint8_t * rgb, size_t cols, size_t rows, int pixsize,
-              const char *file)
+void save_ppm( const unsigned char *rgb, size_t cols, size_t rows, int pixsize,
+               const char *file )
 {
     int         fd;
     char        string[64];
@@ -199,6 +199,88 @@ void save_ppm(const uint8_t * rgb, size_t cols, size_t rows, int pixsize,
     close( fd );
 }
 
+void initFfmpeg( void )
+{
+    av_register_all();
+    frame = avcodec_alloc_frame();
+}
+
+
+void initVideoIn( sharedMem_t *sharedMem, int cols, int rows )
+{
+    int             i;
+    int             offset;
+
+    sharedMem->frameSize  = avpicture_get_size( PIX_FMT_YUV444P, cols, rows );
+
+    sharedMem->frameCountIn = numChildren + 4;
+    sharedMem->frameCountOut = numChildren + 4;
+    sharedMem->frameCount = sharedMem->frameCountIn + sharedMem->frameCountOut;
+
+    sharedMem->offsets.frameIn = 0;
+    sharedMem->offsets.frameOut = sharedMem->frameSize * 
+                                  sharedMem->frameCountIn;
+    
+    idFrame = shmget( IPC_PRIVATE, 
+                      sharedMem->frameSize * sharedMem->frameCount,
+                      IPC_CREAT | 0600 );
+    frameBlock = (unsigned char *)shmat( idFrame, NULL, 0 );
+
+    avFrameIn  = (AVPicture *)malloc(sizeof(AVPicture) * 
+                                     sharedMem->frameCountIn);
+    avFrameOut = (AVPicture *)malloc(sizeof(AVPicture) * 
+                                     sharedMem->frameCountOut);
+
+    for( i = 0; i < sharedMem->frameCountIn; i++ ) {
+        offset = sharedMem->frameSize * i;
+        avpicture_fill(&avFrameIn[i], &frameBlock[offset], 
+                       PIX_FMT_YUV444P, cols, rows);
+    }
+
+    for( i = 0; i < sharedMem->frameCountOut; i++ ) {
+        offset = sharedMem->frameSize * (i + sharedMem->frameCountIn);
+        avpicture_fill(&avFrameOut[i], &frameBlock[offset], 
+                       PIX_FMT_YUV444P, cols, rows);
+    }
+}
+
+void frameToUnsignedInt( unsigned char *frame, unsigned int *buffer, int cols,
+                         int rows )
+{
+    int             i;
+    unsigned char  *y, *u, *v;
+    int             pixCount;
+
+    pixCount = cols * rows;
+    y = frame;
+    u = y + pixCount;
+    v = u + pixCount;
+
+    for( i = 0; i < pixCount; i++ ) {
+        buffer[i] = (y[i] << 24) + (u[i] << 16) + (v[i] << 8) + (0 << 0);
+    }
+}
+
+void unsignedIntToFrame( unsigned int *buffer, unsigned char *frame, int cols,
+                         int rows )
+{
+    int             i;
+    unsigned char  *y, *u, *v;
+    int             pixCount;
+    unsigned int    val;
+
+    pixCount = cols * rows;
+    y = frame;
+    u = y + pixCount;
+    v = u + pixCount;
+
+    for( i = 0; i < pixCount; i++ ) {
+        val = buffer[i];
+        y[i] = (val >> 24) & 0xFF;
+        u[i] = (val >> 16) & 0xFF;
+        v[i] = (val >>  8) & 0xFF;
+    }
+}
 
 /*
  * vim:ts=4:sw=4:ai:et:si:sts=4

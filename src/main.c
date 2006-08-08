@@ -40,6 +40,7 @@
 #include "queue.h"
 #include "logging.h"
 #include "shared_mem.h"
+#include "video.h"
 
 
 /* SVN generated ID string */
@@ -56,6 +57,7 @@ void do_child( int childNum );
 void readConfigFile( void );
 
 int                 idShm, idSem;
+extern int          idFrame;
 int                 childCount = 0;
 char               *shmBlock;
 int                 numChildren = -1;
@@ -75,6 +77,7 @@ int main( int argc, char **argv )
     cardInfo_t         *cardInfo;
 
     queueInit();
+    initFfmpeg();
 
     signal( SIGINT, signal_handler );
     signal( SIGCHLD, signal_child );
@@ -127,7 +130,7 @@ int main( int argc, char **argv )
         case Q_MSG_READY:
             childNum = *(int *)msg;
             cardInfo = &sharedMem->cardInfo[childNum];
-            if( !cardInfo->haveNvFloat || !cardInfo->haveTextRect ) {
+            if( !cardInfo->have.NvFloat || !cardInfo->have.TextRect ) {
                 LogPrint( LOG_NOTICE, "Child %d ready, but doesn't support "
                                       "required extensions, killing it", 
                                       childNum );
@@ -138,11 +141,11 @@ int main( int argc, char **argv )
             } else {
                 LogPrint( LOG_NOTICE, "Child %d ready", childNum );
                 msgOut.type = CHILD_RENDER_MODE;
-                msgOut.payload.mode = 0;
+                msgOut.payload.renderMode.mode = 0;
                 queueSendBinary( Q_MSG_CLIENT_START + childNum, 
                                  (char *)&msgOut, 
                                  sizeof(ChildMsg_t) + 
-                                 ELEMSIZE( mode, ChildMsgPayload_t ) - 
+                                 ELEMSIZE( renderMode, ChildMsgPayload_t ) - 
                                  ELEMSIZE( payload, ChildMsg_t ) );
             }
             break;

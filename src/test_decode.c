@@ -37,6 +37,7 @@
 #include <ffmpeg/avcodec.h>
 #include "queue.h"
 #include "logging.h"
+#include "video.h"
 
 
 /* SVN generated ID string */
@@ -44,8 +45,10 @@ static char ident[] _UNUSED_ =
     "$Id$";
 
 int main( int argc, char **argv );
-void decode( char *input_filename, int frames );
 void SoftExitParent( void );
+
+int                 numChildren;
+AVPicture           pict;
 
 int main(int argc, char **argv)
 {
@@ -53,13 +56,27 @@ int main(int argc, char **argv)
     char           *msg;
     QueueMsg_t      type;
     int             len = 0;
+    int             counter = 0;
+    char            name[16];
+    int             cols;
+    int             rows;
 
     queueInit();
     atexit(SoftExitParent);
 
-    av_register_all();
+    initFfmpeg();
 
-    decode(argv[1], 100);
+    openFile( argv[1], &cols, &rows );
+
+    avpicture_alloc( &pict, PIX_FMT_RGB24, cols, rows );
+
+    while( counter < 100 && getFrame( &pict, PIX_FMT_RGB24 ) ) {
+        sprintf( name, "%05d.ppm", counter );
+        save_ppm(pict.data[0], cols, rows, 3, name);
+        counter++;
+    }
+
+    closeFfmpeg( &pict );
 
     while (len >= 0) {
         type = Q_MSG_LOG;
