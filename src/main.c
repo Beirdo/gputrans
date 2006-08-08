@@ -59,16 +59,18 @@ void SoftExitParent( void );
 void do_child( int childNum );
 void readConfigFile( void );
 
-int                 idShm, idSem;
-extern int          idFrame;
-int                 childCount = 0;
-char               *shmBlock;
-int                 numChildren = -1;
-static sharedMem_t *sharedMem;
-pthread_t           logThread;
-bool                Debug = FALSE;
-bool                GlobalAbort = FALSE;
+int                     idShm, idSem;
+extern int              idFrame;
+int                     childCount = 0;
+char                   *shmBlock;
+int                     numChildren = -1;
+static sharedMem_t     *sharedMem;
+pthread_t               logThread;
+bool                    Debug = FALSE;
+bool                    GlobalAbort = FALSE;
+extern QueueObject_t   *ChildMsgQ;
 
+void video_in_initialize( sharedMem_t *shared, char *filename );
 
 int main( int argc, char **argv )
 {
@@ -80,10 +82,10 @@ int main( int argc, char **argv )
     int                 len;
     int                 childNum;
     ChildMsg_t          msgOut;
+    ChildMsg_t         *msgFrame;
     cardInfo_t         *cardInfo;
 
     queueInit();
-    initFfmpeg();
     logging_initialize();
 
     signal( SIGINT, signal_handler );
@@ -102,6 +104,8 @@ int main( int argc, char **argv )
         exit( 1 );
     }
     numChildren++;  /* Adjust for starting at -1 */
+
+    video_in_initialize( sharedMem, argv[1] );
 
     /* Fork the children that will each control an OpenGL context */
     child = -1;
@@ -155,6 +159,16 @@ int main( int argc, char **argv )
                                  ELEMSIZE( renderMode, ChildMsgPayload_t ) - 
                                  ELEMSIZE( payload, ChildMsg_t ) );
             }
+            break;
+        case Q_MSG_RENDER_READY:
+            childNum = *(int *)msg;
+            LogPrint( LOG_NOTICE, "Child %d is ready to render", childNum );
+            msgFrame = (ChildMsg_t *)QueueDequeueItem( ChildMsgQ, -1 );
+            queueSendBinary( Q_MSG_CLIENT_START + childNum, 
+                             (char *)msgFrame, 
+                             sizeof(ChildMsg_t) + 
+                             ELEMSIZE( renderFrame, ChildMsgPayload_t ) - 
+                             ELEMSIZE( payload, ChildMsg_t ) );
             break;
         default:
             break;

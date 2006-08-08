@@ -38,6 +38,7 @@ static char ipc_queue_h_ident[] _UNUSED_ =
 typedef enum {
     Q_MSG_UNUSED = 0,
     Q_MSG_READY,
+    Q_MSG_RENDER_READY,
     Q_MSG_FRAME_DONE,
     Q_MSG_DYING_GASP,
     Q_MSG_LOG,
@@ -61,7 +62,7 @@ typedef struct {
 typedef struct {
     int             frameNum;
     int             indexIn;
-    int             indexOut;
+    int             indexInPrev;
 } RenderFrame_t;
 
 typedef union {

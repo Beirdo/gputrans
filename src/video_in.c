@@ -38,15 +38,22 @@
 #include <string.h>
 #include <ffmpeg/avcodec.h>
 #include <ffmpeg/avformat.h>
+#include <pthread.h>
 #include "ipc_queue.h"
 #include "ipc_logging.h"
 #include "shared_mem.h"
 #include "video.h"
+#include "queue.h"
 
 
 /* SVN generated ID string */
 static char ident[] _UNUSED_ = 
     "$Id$";
+
+typedef struct {
+    LinkedListItem_t    link;
+    ChildMsg_t          msg;
+} ChildMsgList_t;
 
 int                 idFrame;
 extern int          numChildren;
@@ -58,7 +65,12 @@ int                 video_index = -1;
 AVFormatContext    *fcx = NULL;
 AVCodecContext     *ccx = NULL;
 AVCodec            *codec = NULL;
+QueueObject_t      *ChildMsgQ;
+pthread_t           videoInThreadId;
+static sharedMem_t *sharedMem;
 
+
+void *VideoInThread( void *arg );
     
 void openFile( char *input_filename, int *cols, int *rows )
 {
@@ -280,6 +292,76 @@ void unsignedIntToFrame( unsigned int *buffer, unsigned char *frame, int cols,
         u[i] = (val >> 16) & 0xFF;
         v[i] = (val >>  8) & 0xFF;
     }
+}
+
+void video_in_initialize( sharedMem_t *shared, char *filename )
+{
+    sharedMem = shared;
+    pthread_create( &videoInThreadId, NULL, VideoInThread, filename );
+}
+
+void *VideoInThread( void *arg )
+{
+    char           *filename = (char *)arg;
+    int             cols;
+    int             rows;
+    AVPicture      *pict;
+    int             frameCount;
+    int             frameNum = 0;
+    int             headIn  = -1;
+    int             tailIn  = 0;
+    int             curr;
+    int             prev;
+    bool            done = FALSE;
+    ChildMsg_t     *msg;
+
+    LogPrintNoArg( LOG_NOTICE, "Starting video input thread" );
+
+    ChildMsgQ = QueueCreate( numChildren * 2 );
+    initFfmpeg();
+    openFile( filename, &cols, &rows );
+    initVideoIn( sharedMem, cols, rows );
+
+    frameCount = sharedMem->frameCountIn;
+
+    pict = &avFrameIn[0];
+
+    while( !done ) {
+        while( (tailIn + 1) % frameCount == headIn ) {
+            usleep( 100000L );
+        }
+
+        if( !getFrame( pict, PIX_FMT_YUV444P ) ) {
+            done = TRUE;
+            continue;
+        }
+
+        frameNum++;
+        curr = tailIn;
+
+        if( headIn == -1 ) {
+            /* This is the first frame, no previous frame */
+            headIn = tailIn;
+            prev = -1;
+        } else {
+            prev = (tailIn + frameCount - 1) % frameCount;
+        }
+
+        msg = (ChildMsg_t *)malloc(sizeof(ChildMsg_t));
+        msg->type = CHILD_RENDER_FRAME;
+        msg->payload.renderFrame.frameNum    = frameNum;
+        msg->payload.renderFrame.indexIn     = curr;
+        msg->payload.renderFrame.indexInPrev = prev;
+
+        QueueEnqueueItem( ChildMsgQ, (QueueItem_t)msg );
+
+        tailIn = (tailIn + 1) % frameCount;
+
+        pict = &avFrameIn[tailIn];
+    }
+
+    closeFfmpeg( NULL );
+    return( NULL );
 }
 
 /*

@@ -91,6 +91,7 @@ void do_child( int childNum )
     QueueMsg_t      type;
     int             len;
     ChildMsg_t     *message;
+    bool            done;
 
     (void)width;
     (void)height;
@@ -114,28 +115,43 @@ void do_child( int childNum )
 
     queueSendBinary( Q_MSG_READY, &childNum, sizeof(childNum) );
 
-    len = -1;
+    done = FALSE;
+    while( !done ) {
+        len = -1;
 
-    while( len < 0 ) {
-        type = Q_MSG_CLIENT_START + childNum;
-        queueReceive( &type, &msg, &len, 0 );
-        if( len < 0 ) {
-            continue;
+        while( len < 0 ) {
+            type = Q_MSG_CLIENT_START + childNum;
+            queueReceive( &type, &msg, &len, 0 );
+            if( len < 0 ) {
+                continue;
+            }
         }
-    }
 
-    message = (ChildMsg_t *)msg;
-    switch( message->type ) {
-    case CHILD_EXIT:
-        LogPrint( LOG_NOTICE, "<%d> Got message, exiting", childNum );
-        break;
-    case CHILD_RENDER_MODE:
-        LogPrint( LOG_NOTICE, "<%d> Entering rendering mode %d", childNum,
-                              message->payload.renderMode.mode );
-        sleep(10);
-        break;
-    default:
-        break;
+        message = (ChildMsg_t *)msg;
+        switch( message->type ) {
+        case CHILD_EXIT:
+            LogPrint( LOG_NOTICE, "<%d> Got message, exiting", childNum );
+            done = TRUE;
+            break;
+        case CHILD_RENDER_MODE:
+            LogPrint( LOG_NOTICE, "<%d> Entering rendering mode %d", childNum,
+                                  message->payload.renderMode.mode );
+            sleep(2);
+            queueSendBinary( Q_MSG_RENDER_READY, &childNum, sizeof(childNum) );
+            break;
+        case CHILD_RENDER_FRAME:
+            LogPrint( LOG_NOTICE, "<%d> Received Frame #%d (index %d, prev %d)",
+                                  childNum, 
+                                  message->payload.renderFrame.frameNum,
+                                  message->payload.renderFrame.indexIn,
+                                  message->payload.renderFrame.indexInPrev );
+            queueSendBinary( Q_MSG_FRAME_DONE, &message->payload.renderFrame, 
+                             sizeof(message->payload.renderFrame) );
+            done = TRUE;
+            break;
+        default:
+            break;
+        }
     }
 
     sleep(1);
