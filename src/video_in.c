@@ -156,7 +156,11 @@ bool getFrame( AVPicture *pict, int pix_fmt )
             /*
              * Decode the packet 
              */
-            avcodec_decode_video(ccx, frame, &got_picture, pkt.data, pkt.size);
+            if( avcodec_decode_video(ccx, frame, &got_picture, pkt.data, 
+                                     pkt.size) < 0 ) {
+                LogPrintNoArg( LOG_CRIT, "Found bad frame, continuing" );
+                got_picture = FALSE;
+            }
 
             if (got_picture) {
                 /* Got a frame, extract the video, converting to the desired
