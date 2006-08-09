@@ -39,13 +39,13 @@ typedef enum {
     Q_MSG_UNUSED = 0,
     Q_MSG_READY,
     Q_MSG_RENDER_READY,
-    Q_MSG_FRAME_DONE,
     Q_MSG_DYING_GASP,
     Q_MSG_LOG,
+    Q_MSG_FRAME_DONE,
     Q_MSG_CLIENT_START
 } QueueMsg_t;
 
-#define Q_MSG_ALL_SERVER    (-1 * Q_MSG_LOG)
+#define Q_MSG_ALL_SERVER    (-1 * Q_MSG_FRAME_DONE)
 
 typedef enum {
     CHILD_EXIT,
@@ -77,7 +77,7 @@ typedef struct {
 
 typedef struct {
     int                 childNum;
-    int                 frameNum;
+    RenderFrame_t       renderFrame;
 } FrameDoneMsg_t;
 
 void queueInit( void );

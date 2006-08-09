@@ -68,6 +68,8 @@ AVCodec            *codec = NULL;
 QueueObject_t      *ChildMsgQ;
 pthread_t           videoInThreadId;
 static sharedMem_t *sharedMem;
+static int          headIn  = -1;
+static int          tailIn  = 0;
 
 
 void *VideoInThread( void *arg );
@@ -308,8 +310,6 @@ void *VideoInThread( void *arg )
     AVPicture      *pict;
     int             frameCount;
     int             frameNum = 0;
-    int             headIn  = -1;
-    int             tailIn  = 0;
     int             curr;
     int             prev;
     bool            done = FALSE;
@@ -359,6 +359,8 @@ void *VideoInThread( void *arg )
         msg->payload.renderFrame.indexIn     = curr;
         msg->payload.renderFrame.indexInPrev = prev;
 
+        LogPrint( LOG_NOTICE, "enqueued frame #%d, head=%d, tail=%d",
+                              frameNum, headIn, tailIn );
         QueueEnqueueItem( ChildMsgQ, (QueueItem_t)msg );
 
         tailIn = (tailIn + 1) % frameCount;
@@ -368,6 +370,15 @@ void *VideoInThread( void *arg )
 
     closeFfmpeg( NULL );
     return( NULL );
+}
+
+void videoFinished( int index )
+{
+    int         frameCount;
+
+    frameCount = sharedMem->frameCountIn;
+
+    headIn = (index + 1) % frameCount;
 }
 
 /*

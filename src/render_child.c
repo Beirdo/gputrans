@@ -142,7 +142,13 @@ void do_child( int childNum )
             queueSendBinary( Q_MSG_RENDER_READY, &childNum, sizeof(childNum) );
             break;
         case CHILD_RENDER_FRAME:
-            frameMsg.frameNum = message->payload.renderFrame.frameNum;
+            frameMsg.renderFrame.frameNum = 
+                message->payload.renderFrame.frameNum;
+            frameMsg.renderFrame.indexIn =
+                message->payload.renderFrame.indexIn;
+            frameMsg.renderFrame.indexInPrev =
+                message->payload.renderFrame.indexInPrev;
+
             LogPrint( LOG_NOTICE, "<%d> Received Frame #%d (index %d, prev %d)",
                                   childNum, 
                                   message->payload.renderFrame.frameNum,

@@ -74,6 +74,7 @@ extern unsigned char   *frameBlock;
 pthread_t               mainThreadId;
 
 void video_in_initialize( sharedMem_t *shared, char *filename );
+void videoFinished( int index );
 
 int main( int argc, char **argv )
 {
@@ -172,9 +173,11 @@ int main( int argc, char **argv )
             break;
         case Q_MSG_FRAME_DONE:
             frameMsg = (FrameDoneMsg_t *)msg;
-            LogPrint( LOG_NOTICE, "Child %d is done frame %d", 
-                                  frameMsg->childNum, frameMsg->frameNum );
+            videoFinished( frameMsg->renderFrame.indexInPrev );
             sendFrame( frameMsg->childNum );
+            LogPrint( LOG_NOTICE, "Child %d is done frame %d", 
+                                  frameMsg->childNum, 
+                                  frameMsg->renderFrame.frameNum );
             break;
         default:
             break;
@@ -210,6 +213,9 @@ void sendFrame( int childNum )
                          ELEMSIZE(type, ChildMsg_t) );
         return;
     }
+
+    LogPrint( LOG_NOTICE, "Enqueuing frame %d for child %d", 
+                          msgFrame->payload.renderFrame.frameNum, childNum );
                          
     queueSendBinary( Q_MSG_CLIENT_START + childNum, 
                      (char *)msgFrame, 
