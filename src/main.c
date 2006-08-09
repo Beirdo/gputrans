@@ -67,10 +67,11 @@ int                     childCount = 0;
 char                   *shmBlock;
 int                     numChildren = -1;
 static sharedMem_t     *sharedMem;
-pthread_t               logThread;
 bool                    Debug = FALSE;
 bool                    GlobalAbort = FALSE;
 extern QueueObject_t   *ChildMsgQ;
+extern unsigned char   *frameBlock;
+pthread_t               mainThreadId;
 
 void video_in_initialize( sharedMem_t *shared, char *filename );
 
@@ -86,6 +87,8 @@ int main( int argc, char **argv )
     ChildMsg_t          msgOut;
     cardInfo_t         *cardInfo;
     FrameDoneMsg_t     *frameMsg;
+
+    mainThreadId = pthread_self();
 
     queueInit();
     logging_initialize();
@@ -235,6 +238,10 @@ void signal_child( int signum )
 
     (void)signum;
 
+    if( pthread_self() != mainThreadId ) {
+        return;
+    }
+
     while( 1 ) {
         pid = waitpid( -1, &status, WNOHANG );
         if( pid <= 0 ) {
@@ -245,7 +252,7 @@ void signal_child( int signum )
         childNum = -1;
         for( i = 0; i < numChildren; i++ ) {
             cardInfo = &sharedMem->cardInfo[i];
-            if( cardInfo->pid == pid ) {
+            if( cardInfo && cardInfo->pid == pid ) {
                 childNum = cardInfo->childNum;
             }
         }
@@ -277,6 +284,12 @@ void SoftExitParent( void )
     QueueMsg_t          type;
     int                 len = 0;
 
+    if( pthread_self() != mainThreadId ) {
+        return;
+    }
+
+    signal( SIGCHLD, SIG_IGN );
+
     while( len >= 0 ) {
         type = Q_MSG_LOG;
         queueReceive( &type, &msg, &len, IPC_NOWAIT );
@@ -292,6 +305,10 @@ void SoftExitParent( void )
 
     shmdt( shmBlock );
     shmctl( idShm, IPC_RMID, NULL );
+
+    shmdt( frameBlock );
+    shmctl( idFrame, IPC_RMID, NULL );
+
     queueDestroy();
     /* Give the LogThread time to flush the last messages */
     sleep(2);
