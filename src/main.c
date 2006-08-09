@@ -173,10 +173,14 @@ int main( int argc, char **argv )
             break;
         case Q_MSG_FRAME_DONE:
             frameMsg = (FrameDoneMsg_t *)msg;
+            childNum = frameMsg->childNum;
             videoFinished( frameMsg->renderFrame.indexInPrev );
-            sendFrame( frameMsg->childNum );
+            sendFrame( childNum );
+            printf("Child %d is done frame %d\n", 
+                                  childNum, 
+                                  frameMsg->renderFrame.frameNum );
             LogPrint( LOG_NOTICE, "Child %d is done frame %d", 
-                                  frameMsg->childNum, 
+                                  childNum, 
                                   frameMsg->renderFrame.frameNum );
             break;
         default:
