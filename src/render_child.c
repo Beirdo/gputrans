@@ -58,29 +58,32 @@ void setupTexture(const GLuint texID, int x, int y);
 void createTextures(int x, int y);
 void loadFrame(uint32 *data, int x, int y);
 
-extern int          idShm, idSem;
-extern char        *shmBlock;
-static sharedMem_t *sharedMem;
-static cardInfo_t  *cardInfo;
-static int          me;
-static bool         initialized = FALSE;
-static int          width, height;
+extern int              idShm, idSem, idFrame;
+extern char            *shmBlock;
+extern unsigned char   *frameBlock;
+static sharedMem_t     *sharedMem;
+static cardInfo_t      *cardInfo;
+static int              me;
+static bool             initialized = FALSE;
+static int              width, height;
+static int              mode;
+static unsigned int    *buffer = NULL;
 
-GLuint              glutWindowHandle;
-GLuint              fb;
+GLuint                  glutWindowHandle;
+GLuint                  fb;
 
 /* ping pong management vars */
-int writeTex = 0;
-int readTex = 1;
-GLenum attachmentpoints[] = { GL_COLOR_ATTACHMENT0_EXT, 
-                              GL_COLOR_ATTACHMENT1_EXT };
+int                     writeTex = 0;
+int                     readTex = 1;
+GLenum                  attachmentpoints[] = { GL_COLOR_ATTACHMENT0_EXT, 
+                                               GL_COLOR_ATTACHMENT1_EXT };
  
-GLenum texTarget = GL_TEXTURE_RECTANGLE_ARB;
-GLenum texInternalFormat = GL_FLOAT_RGBA32_NV;
-GLenum texFormat = GL_RGBA;
+GLenum                  texTarget         = GL_TEXTURE_RECTANGLE_ARB;
+GLenum                  texInternalFormat = GL_FLOAT_RGBA32_NV;
+GLenum                  texFormat         = GL_RGBA;
 
-GLuint pingpongTexID[2];
-GLuint inputTexID;
+GLuint                  pingpongTexID[2];
+GLuint                  inputTexID;
 
 
 void do_child( int childNum )
@@ -93,11 +96,18 @@ void do_child( int childNum )
     ChildMsg_t     *message;
     bool            done;
     FrameDoneMsg_t  frameMsg;
-
-    (void)width;
-    (void)height;
+    unsigned char  *frameInBase;
+    unsigned char  *frameOutBase;
+    unsigned char  *frameIn;
+    unsigned char  *frameInPrev;
+    unsigned char  *frameOut;
+    int             frameSize;
+    int             frameNum;
+    int             indexIn;
+    int             indexInPrev;
 
     shmBlock = NULL;
+    frameBlock = NULL;
     atexit( SoftExitChild );
 
     shmBlock = (char *)shmat( idShm, NULL, 0 );
@@ -106,6 +116,12 @@ void do_child( int childNum )
     argv[2] = cardInfo->display;
     me = childNum;
     frameMsg.childNum = childNum;
+
+    frameBlock = (unsigned char *)shmat( idFrame, NULL, 0 );
+
+    frameInBase  = &frameBlock[sharedMem->offsets.frameIn];
+    frameOutBase = &frameBlock[sharedMem->offsets.frameOut];
+    frameSize    = sharedMem->frameSize;
 
     glutInit( &argc, argv );
     glutWindowHandle = glutCreateWindow( "gputrans" );
@@ -136,24 +152,42 @@ void do_child( int childNum )
             done = TRUE;
             break;
         case CHILD_RENDER_MODE:
-            LogPrint( LOG_NOTICE, "<%d> Entering rendering mode %d", childNum,
-                                  message->payload.renderMode.mode );
+            mode   = message->payload.renderMode.mode;
+            width  = message->payload.renderMode.cols;
+            height = message->payload.renderMode.rows;
+            LogPrint( LOG_NOTICE, "<%d> Enter rendering mode %d (%dx%d - %d)", 
+                                  childNum, mode, width, height, 
+                                  sharedMem->frameSize );
+            buffer = (unsigned int *)
+                malloc( sizeof(unsigned int) * width * height );
             sleep(1);
             queueSendBinary( Q_MSG_RENDER_READY, &childNum, sizeof(childNum) );
             break;
         case CHILD_RENDER_FRAME:
-            frameMsg.renderFrame.frameNum = 
-                message->payload.renderFrame.frameNum;
-            frameMsg.renderFrame.indexIn =
-                message->payload.renderFrame.indexIn;
-            frameMsg.renderFrame.indexInPrev =
-                message->payload.renderFrame.indexInPrev;
+            if( !buffer ) {
+                LogPrint( LOG_CRIT, "<%d> Received frame before mode!!", 
+                                    childNum );
+                break;
+            }
+
+            frameNum    = message->payload.renderFrame.frameNum;
+            indexIn     = message->payload.renderFrame.indexIn;
+            indexInPrev = message->payload.renderFrame.indexInPrev;
+
+            frameMsg.renderFrame.frameNum = frameNum;
+            frameMsg.renderFrame.indexIn = indexIn;
+            frameMsg.renderFrame.indexInPrev = indexInPrev;
+
+            frameIn     = frameInBase  + (frameSize * indexIn);
+            frameInPrev = frameInBase  + (frameSize * indexInPrev);
+            frameOut    = frameOutBase + (frameSize * indexIn);
 
             LogPrint( LOG_NOTICE, "<%d> Received Frame #%d (index %d, prev %d)",
-                                  childNum, 
-                                  message->payload.renderFrame.frameNum,
-                                  message->payload.renderFrame.indexIn,
-                                  message->payload.renderFrame.indexInPrev );
+                                  childNum, frameNum, indexIn, indexInPrev );
+
+            /* Pretend to have done some work */
+            memcpy( frameOut, frameIn, frameSize );
+
             queueSendBinary( Q_MSG_FRAME_DONE, &frameMsg, sizeof( frameMsg ) );
             break;
         default:
@@ -175,6 +209,17 @@ void SoftExitChild( void )
 
     if( shmBlock ) {
         shmdt( shmBlock );
+        shmBlock = NULL;
+    }
+
+    if( frameBlock ) {
+        shmdt( frameBlock );
+        frameBlock = NULL;
+    }
+
+    if( buffer ) {
+        free( buffer );
+        buffer = NULL;
     }
 
     sleep( 1 );

@@ -68,6 +68,8 @@ typedef struct {
 typedef struct {
     structOffset_t  offsets;
     cardInfo_t      cardInfo[MAX_NUM_CARDS];
+    int             rows;
+    int             cols;
     int             frameSize;
     int             frameCount;
     int             frameCountIn;

@@ -225,6 +225,8 @@ void initVideoIn( sharedMem_t *sharedMem, int cols, int rows )
     int             i;
     int             offset;
 
+    sharedMem->cols = cols;
+    sharedMem->rows = rows;
     sharedMem->frameSize  = avpicture_get_size( PIX_FMT_YUV444P, cols, rows );
 
     sharedMem->frameCountIn = numChildren + 4;

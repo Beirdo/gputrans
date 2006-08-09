@@ -88,6 +88,7 @@ int main( int argc, char **argv )
     ChildMsg_t          msgOut;
     cardInfo_t         *cardInfo;
     FrameDoneMsg_t     *frameMsg;
+    int                 frameNum;
 
     mainThreadId = pthread_self();
 
@@ -159,6 +160,8 @@ int main( int argc, char **argv )
                 LogPrint( LOG_NOTICE, "Child %d ready", childNum );
                 msgOut.type = CHILD_RENDER_MODE;
                 msgOut.payload.renderMode.mode = 0;
+                msgOut.payload.renderMode.cols = sharedMem->cols;
+                msgOut.payload.renderMode.rows = sharedMem->rows;
                 queueSendBinary( Q_MSG_CLIENT_START + childNum, 
                                  (char *)&msgOut, 
                                  sizeof(ChildMsg_t) + 
@@ -174,11 +177,11 @@ int main( int argc, char **argv )
         case Q_MSG_FRAME_DONE:
             frameMsg = (FrameDoneMsg_t *)msg;
             childNum = frameMsg->childNum;
+            frameNum = frameMsg->renderFrame.frameNum;
             videoFinished( frameMsg->renderFrame.indexInPrev );
-            if( sendFrame( childNum ) ) {
-                LogPrint( LOG_NOTICE, "Child %d is done frame %d", childNum, 
-                                      frameMsg->renderFrame.frameNum );
-            }
+            LogPrint( LOG_NOTICE, "Child %d is done frame %d", childNum, 
+                                  frameNum );
+            sendFrame( childNum );
             break;
         default:
             break;
