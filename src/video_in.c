@@ -201,7 +201,7 @@ void save_ppm( const unsigned char *rgb, size_t cols, size_t rows, int pixsize,
         return;
     }
 
-    fd = open( file, O_CREAT | O_WRONLY, 0644 );
+    fd = open( file, O_CREAT | O_TRUNC | O_WRONLY, 0644 );
     switch (pixsize) {
     case 1:
         write( fd, "P5\n", 3 );
