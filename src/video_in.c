@@ -328,6 +328,8 @@ void *VideoInThread( void *arg )
 
     pict = &avFrameIn[0];
 
+    queueSendBinary( Q_MSG_VIDEO_READY, NULL, 0 );
+
     while( !done ) {
         while( (tailIn + 1) % frameCount == headIn ) {
             usleep( 100000L );
@@ -383,6 +385,24 @@ void videoFinished( int index )
     frameCount = sharedMem->frameCountIn;
 
     headIn = (index + 1) % frameCount;
+}
+
+void videoOut( int frameNum, int index )
+{
+    static char         filename[64];
+    static AVPicture    pict;
+    static bool         init = FALSE;
+
+    sprintf( filename, "out/%05d.ppm", frameNum );
+
+    if( !init ) {
+        avpicture_alloc( &pict, PIX_FMT_RGB24, sharedMem->cols, 
+                         sharedMem->rows );
+        init = TRUE;
+    }
+    img_convert(&pict, PIX_FMT_RGB24, &avFrameOut[index], PIX_FMT_YUV444P, 
+                sharedMem->cols, sharedMem->rows);
+    save_ppm( pict.data[0], sharedMem->cols, sharedMem->rows, 3, filename );
 }
 
 /*

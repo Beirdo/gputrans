@@ -75,6 +75,7 @@ pthread_t               mainThreadId;
 
 void video_in_initialize( sharedMem_t *shared, char *filename );
 void videoFinished( int index );
+void videoOut( int frameNum, int index );
 
 int main( int argc, char **argv )
 {
@@ -113,6 +114,11 @@ int main( int argc, char **argv )
     numChildren++;  /* Adjust for starting at -1 */
 
     video_in_initialize( sharedMem, argv[1] );
+    len = -1;
+    while( len < 0 ) {
+        type = Q_MSG_VIDEO_READY;
+        queueReceive( &type, &msg, &len, 0 );
+    }
 
     /* Fork the children that will each control an OpenGL context */
     child = -1;
@@ -179,6 +185,7 @@ int main( int argc, char **argv )
             childNum = frameMsg->childNum;
             frameNum = frameMsg->renderFrame.frameNum;
             videoFinished( frameMsg->renderFrame.indexInPrev );
+            videoOut( frameNum, frameMsg->renderFrame.indexIn );
             LogPrint( LOG_NOTICE, "Child %d is done frame %d", childNum, 
                                   frameNum );
             sendFrame( childNum );

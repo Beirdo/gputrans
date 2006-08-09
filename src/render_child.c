@@ -123,6 +123,9 @@ void do_child( int childNum )
     frameOutBase = &frameBlock[sharedMem->offsets.frameOut];
     frameSize    = sharedMem->frameSize;
 
+    LogPrint( LOG_NOTICE, "<%d> inOffset = %d, outOffset = %d", childNum,
+              sharedMem->offsets.frameIn, sharedMem->offsets.frameOut );
+
     glutInit( &argc, argv );
     glutWindowHandle = glutCreateWindow( "gputrans" );
     initialized = TRUE;

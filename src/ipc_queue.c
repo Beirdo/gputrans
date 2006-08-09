@@ -79,10 +79,12 @@ void queueSendBinary( QueueMsg_t type, void *data, int len )
     }
 
     msg->mtype = (long)type;
-    if( len > MAX_MSG_SIZE + 1 ) {
-        len = MAX_MSG_SIZE + 1;
+    if( len && data ) {
+        if( len > MAX_MSG_SIZE + 1 ) {
+            len = MAX_MSG_SIZE + 1;
+        }
+        memcpy( msg->mtext, data, len );
     }
-    memcpy( msg->mtext, data, len );
     msgsnd( idMsg, msg, len, IPC_NOWAIT );
 }
 

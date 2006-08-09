@@ -38,6 +38,7 @@ static char ipc_queue_h_ident[] _UNUSED_ =
 typedef enum {
     Q_MSG_UNUSED = 0,
     Q_MSG_READY,
+    Q_MSG_VIDEO_READY,
     Q_MSG_RENDER_READY,
     Q_MSG_DYING_GASP,
     Q_MSG_LOG,
