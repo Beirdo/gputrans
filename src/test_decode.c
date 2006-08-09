@@ -51,6 +51,7 @@ int                 numChildren;
 AVPicture           pict;
 bool                Debug = FALSE;
 bool                GlobalAbort = FALSE;
+unsigned long       shmmax;
 
 int main(int argc, char **argv)
 {

@@ -72,6 +72,7 @@ bool                    GlobalAbort = FALSE;
 extern QueueObject_t   *ChildMsgQ;
 extern unsigned char   *frameBlock;
 pthread_t               mainThreadId;
+unsigned long           shmmax;
 
 void video_in_initialize( sharedMem_t *shared, char *filename );
 void videoFinished( int index );
@@ -90,6 +91,8 @@ int main( int argc, char **argv )
     cardInfo_t         *cardInfo;
     FrameDoneMsg_t     *frameMsg;
     int                 frameNum;
+    struct shminfo      shminfo;
+    struct shminfo     *pShminfo;
 
     mainThreadId = pthread_self();
 
@@ -97,11 +100,18 @@ int main( int argc, char **argv )
     logging_initialize();
 
     signal( SIGINT, signal_handler );
+    signal( SIGSEGV, signal_handler );
     signal( SIGCHLD, signal_child );
 
     LogPrintNoArg( LOG_NOTICE, "Starting gputrans" );
 
+
     idShm = shmget( IPC_PRIVATE, sizeof(sharedMem_t), IPC_CREAT | 0600 );
+    pShminfo = &shminfo;
+    shmctl( idShm, IPC_INFO, (struct shmid_ds *)pShminfo );
+    shmmax = shminfo.shmmax;
+    LogPrint( LOG_NOTICE, "SHMMAX = %ld", shmmax );
+
     shmBlock = (char *)shmat( idShm, NULL, 0 );
     memset( shmBlock, 0, sizeof(sharedMem_t) );
     sharedMem = (sharedMem_t *)shmBlock;
@@ -305,7 +315,7 @@ void SoftExitParent( void )
     int                 len = 0;
 
     if( pthread_self() != mainThreadId ) {
-        return;
+        _exit(0);
     }
 
     signal( SIGCHLD, SIG_IGN );
@@ -332,6 +342,7 @@ void SoftExitParent( void )
     queueDestroy();
     /* Give the LogThread time to flush the last messages */
     sleep(2);
+    GlobalAbort = TRUE;
     _exit( 0 );
 }
 

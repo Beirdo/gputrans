@@ -85,6 +85,10 @@ GLenum                  texFormat         = GL_RGBA;
 GLuint                  pingpongTexID[2];
 GLuint                  inputTexID;
 
+void frameToUnsignedInt( unsigned char *frame, unsigned int *buffer, int cols,
+                         int rows );
+void unsignedIntToFrame( unsigned int *buffer, unsigned char *frame, int cols,
+                         int rows );
 
 void do_child( int childNum )
 {
@@ -188,8 +192,13 @@ void do_child( int childNum )
             LogPrint( LOG_NOTICE, "<%d> Received Frame #%d (index %d, prev %d)",
                                   childNum, frameNum, indexIn, indexInPrev );
 
+            /* Repack into 32bit RGBA structures */
+            frameToUnsignedInt( frameIn, buffer, width, height );
+
             /* Pretend to have done some work */
-            memcpy( frameOut, frameIn, frameSize );
+
+            /* Repack into the YUV444P of the output frame */
+            unsignedIntToFrame( buffer, frameOut, width, height );
 
             queueSendBinary( Q_MSG_FRAME_DONE, &frameMsg, sizeof( frameMsg ) );
             break;

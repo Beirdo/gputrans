@@ -44,6 +44,7 @@
 #include "shared_mem.h"
 #include "video.h"
 #include "queue.h"
+#include "logging.h"
 
 
 /* SVN generated ID string */
@@ -70,9 +71,13 @@ pthread_t           videoInThreadId;
 static sharedMem_t *sharedMem;
 static int          headIn  = -1;
 static int          tailIn  = 0;
+extern unsigned long shmmax;
+extern bool         GlobalAbort;
 
 
 void *VideoInThread( void *arg );
+
+void SoftExitParent( void );
     
 void openFile( char *input_filename, int *cols, int *rows )
 {
@@ -158,6 +163,9 @@ bool getFrame( AVPicture *pict, int pix_fmt )
                  * output format (normally PIX_FMT_YUV444P, but uses
                  * PIX_FMT_RGB24 for test_decode)
                  */
+                if( GlobalAbort ) {
+                    return( FALSE );
+                }
                 img_convert(pict, pix_fmt, (AVPicture *)frame,
                             ccx->pix_fmt, ccx->width, ccx->height);
             }
@@ -224,13 +232,34 @@ void initVideoIn( sharedMem_t *sharedMem, int cols, int rows )
 {
     int             i;
     int             offset;
+    int             maxFrames;
 
     sharedMem->cols = cols;
     sharedMem->rows = rows;
     sharedMem->frameSize  = avpicture_get_size( PIX_FMT_YUV444P, cols, rows );
 
+    LogPrint( LOG_NOTICE, "Frame Size = %d", sharedMem->frameSize );
+
+    maxFrames = (int)(shmmax / sharedMem->frameSize);
+    if( maxFrames < 8 ) {
+        LogLocalPrint( LOG_CRIT, "In order to work with this video file, you will "
+                            "need to increase /proc/sys/kernel/shmmax to at "
+                            "least %ld", ((long)sharedMem->frameSize * 8) );
+        atexit(SoftExitParent);
+        exit( -1 );
+    }
+    LogPrint( LOG_NOTICE, "Maximum frames in SHM segment: %d", maxFrames );
+
     sharedMem->frameCountIn = numChildren + 4;
+    if( sharedMem->frameCountIn > maxFrames / 2 ) {
+        sharedMem->frameCountIn = maxFrames / 2;
+        LogPrint( LOG_NOTICE, "Limiting in frames to %d", maxFrames / 2 );
+    }
     sharedMem->frameCountOut = numChildren + 4;
+    if( sharedMem->frameCountOut > maxFrames / 2 ) {
+        sharedMem->frameCountOut = maxFrames / 2;
+        LogPrint( LOG_NOTICE, "Limiting out frames to %d", maxFrames / 2 );
+    }
     sharedMem->frameCount = sharedMem->frameCountIn + sharedMem->frameCountOut;
 
     sharedMem->offsets.frameIn = 0;
@@ -330,9 +359,13 @@ void *VideoInThread( void *arg )
 
     queueSendBinary( Q_MSG_VIDEO_READY, NULL, 0 );
 
-    while( !done ) {
+    while( !done && !GlobalAbort ) {
         while( (tailIn + 1) % frameCount == headIn ) {
             usleep( 100000L );
+        }
+
+        if( GlobalAbort ) {
+            continue;
         }
 
         if( !getFrame( pict, PIX_FMT_YUV444P ) ) {
