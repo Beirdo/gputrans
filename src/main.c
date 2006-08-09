@@ -59,7 +59,7 @@ void SoftExitParent( void );
 void do_child( int childNum );
 void readConfigFile( void );
 ChildMsg_t *getNextFrame( void );
-void sendFrame( int childNum );
+bool sendFrame( int childNum );
 
 int                     idShm, idSem;
 extern int              idFrame;
@@ -175,13 +175,10 @@ int main( int argc, char **argv )
             frameMsg = (FrameDoneMsg_t *)msg;
             childNum = frameMsg->childNum;
             videoFinished( frameMsg->renderFrame.indexInPrev );
-            sendFrame( childNum );
-            printf("Child %d is done frame %d\n", 
-                                  childNum, 
-                                  frameMsg->renderFrame.frameNum );
-            LogPrint( LOG_NOTICE, "Child %d is done frame %d", 
-                                  childNum, 
-                                  frameMsg->renderFrame.frameNum );
+            if( sendFrame( childNum ) ) {
+                LogPrint( LOG_NOTICE, "Child %d is done frame %d", childNum, 
+                                      frameMsg->renderFrame.frameNum );
+            }
             break;
         default:
             break;
@@ -202,7 +199,7 @@ ChildMsg_t *getNextFrame( void )
     return( msg );
 }
         
-void sendFrame( int childNum )
+bool sendFrame( int childNum )
 {
     ChildMsg_t          msgOut;
     ChildMsg_t         *msgFrame;
@@ -215,11 +212,13 @@ void sendFrame( int childNum )
         queueSendBinary( Q_MSG_CLIENT_START + childNum, 
                          (char *)&msgOut, 
                          ELEMSIZE(type, ChildMsg_t) );
-        return;
+        return( FALSE );
     }
 
+#if 0
     LogPrint( LOG_NOTICE, "Enqueuing frame %d for child %d", 
                           msgFrame->payload.renderFrame.frameNum, childNum );
+#endif
                          
     queueSendBinary( Q_MSG_CLIENT_START + childNum, 
                      (char *)msgFrame, 
@@ -227,6 +226,7 @@ void sendFrame( int childNum )
                      ELEMSIZE( renderFrame, ChildMsgPayload_t ) - 
                      ELEMSIZE( payload, ChildMsg_t ) );
     free( msgFrame );
+    return( TRUE );
 }
 
 void signal_handler( int signum )

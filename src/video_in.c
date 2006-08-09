@@ -359,8 +359,10 @@ void *VideoInThread( void *arg )
         msg->payload.renderFrame.indexIn     = curr;
         msg->payload.renderFrame.indexInPrev = prev;
 
+#if 0
         LogPrint( LOG_NOTICE, "enqueued frame #%d, head=%d, tail=%d",
                               frameNum, headIn, tailIn );
+#endif
         QueueEnqueueItem( ChildMsgQ, (QueueItem_t)msg );
 
         tailIn = (tailIn + 1) % frameCount;

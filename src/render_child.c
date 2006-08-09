@@ -138,7 +138,7 @@ void do_child( int childNum )
         case CHILD_RENDER_MODE:
             LogPrint( LOG_NOTICE, "<%d> Entering rendering mode %d", childNum,
                                   message->payload.renderMode.mode );
-            sleep(2);
+            sleep(1);
             queueSendBinary( Q_MSG_RENDER_READY, &childNum, sizeof(childNum) );
             break;
         case CHILD_RENDER_FRAME:
