@@ -25,20 +25,38 @@
 *
 */
 
-half3 main( half2   coord   : TEXCOORD0,
-            uniform sampler2D Ytex,
-            uniform sampler2D Utex,
-            uniform sampler2D Vtex ) : COLOR
+half3 main( half2   coord               : TEXCOORD0,
+            half3   offset              : COLOR0,
+            half3   factor              : COLOR1,
+            uniform samplerRECT Ytex    : TEXUNIT0,
+            uniform samplerRECT Utex    : TEXUNIT1,
+            uniform samplerRECT Vtex    : TEXUNIT2) : COLOR
 {
     string id = "$Id$";
 
     half2 coord2 = coord / 2.0;
+    /*
+    half3 offset = ( -0.0625, -0.5, -0.5 );
+    half3 factor = ( 1.168949722, 1.142857143, 1.142857143 );
+    */
 
-    half Y = (half)texRECT(Ytex, coord );
-    half U = (half)texRECT(Utex, coord2 );
-    half V = (half)texRECT(Vtex, coord2 );
+    half3 output;
 
-    return half3( Y, U, V );
+    /* Translate Y [16,235] -> [ 0.0625, 0.91796875 ] (done by openGL) 
+     *                      -> [ 0.0,    0.85546875 ]
+     *                      -> [ 0.0,    1.0 ]
+     *
+     * Translate U&V [16,239] -> [  0.0625, 0.93359375 ] (done by openGL)
+     *                        -> [ -0.4375, 0.43359375 ]
+     *                        -> [ -0.5,    0.495535714 ]
+     */
+    output.x = (half)texRECT(Ytex, coord);
+    output.y = (half)texRECT(Utex, coord2);
+    output.z = (half)texRECT(Vtex, coord2);
+
+    output = factor * (output + offset);
+
+    return output;
 }
 
 
