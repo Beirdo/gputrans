@@ -87,7 +87,7 @@ half v_output( half2   coord               : TEXCOORD0,
 
     half output;
 
-    output = ((half)texRECT(frame, coord) / factor.z) - offset.z;
+    output = (texRECT(frame, coord).z / factor.z) - offset.z;
 
     return output;
 }
