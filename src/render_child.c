@@ -37,6 +37,7 @@
 #include <string.h>
 #include <GL/glew.h>
 #include <GL/glut.h>
+#include <Cg/cgGL.h>
 #include "ipc_queue.h"
 #include "ipc_logging.h"
 #include "shared_mem.h"
@@ -54,9 +55,11 @@ void checkGLErrors( const char *label );
 void drawQuad( int w, int h );
 bool checkFramebufferStatus( void );
 void swap( void );
-void setupTexture(const GLuint texID, int x, int y);
+void setupTexture(const GLuint texID, GLenum format, GLenum inFormat, int x, 
+                  int y);
 void createTextures(int x, int y);
-void loadFrame(uint32 *data, int x, int y);
+void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y, 
+               GLuint texID);
 
 extern int              idShm, idSem, idFrame;
 extern char            *shmBlock;
@@ -79,11 +82,21 @@ GLenum                  attachmentpoints[] = { GL_COLOR_ATTACHMENT0_EXT,
                                                GL_COLOR_ATTACHMENT1_EXT };
  
 GLenum                  texTarget         = GL_TEXTURE_RECTANGLE_ARB;
-GLenum                  texInternalFormat = GL_FLOAT_RGBA32_NV;
-GLenum                  texFormat         = GL_RGBA;
+GLenum                  texIntFormatInout = GL_FLOAT_R16_NV;
+GLenum                  texIntFormat      = GL_FLOAT_RGB32_NV;
+GLenum                  texFormatInout    = GL_LUMINANCE;
+GLenum                  texFormat         = GL_RGB;
 
 GLuint                  pingpongTexID[2];
-GLuint                  inputTexID;
+GLuint                  frameTexID, prevFrameTexID;
+GLuint                  yTexID, uTexID, vTexID;
+
+CGcontext               cgContext;
+CGprofile               fragmentProfile = CG_PROFILE_FP30;
+CGprogram               frProgYUV420pIn;
+                                               
+char *frSrcYUV420pIn = "yuv420p-input.cg";
+
 
 void frameToUnsignedInt( unsigned char *frame, unsigned int *buffer, int cols,
                          int rows );
@@ -134,7 +147,9 @@ void do_child( int childNum )
     glutWindowHandle = glutCreateWindow( "gputrans" );
     initialized = TRUE;
     glewInit();
-    
+    cgContext = cgCreateContext();
+    cgGLSetOptimalOptions(fragmentProfile);
+
     /* must be done after OpenGL initialization */
     setupCardInfo( childNum );
 
@@ -165,8 +180,15 @@ void do_child( int childNum )
             LogPrint( LOG_NOTICE, "<%d> Enter rendering mode %d (%dx%d - %d)", 
                                   childNum, mode, width, height, 
                                   sharedMem->frameSize );
-            buffer = (unsigned int *)
-                malloc( sizeof(unsigned int) * width * height );
+
+            frProgYUV420pIn = 
+                cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420pIn, 
+                                         fragmentProfile, "main", NULL );
+            cgGLEnableProfile(fragmentProfile);
+
+            LogPrint( LOG_NOTICE, "<%d> YUV420pIn: %s", 
+                                  cgGetLastListing( cgContext ) );
+    
             sleep(1);
             queueSendBinary( Q_MSG_RENDER_READY, &childNum, sizeof(childNum) );
             break;
@@ -192,6 +214,7 @@ void do_child( int childNum )
             LogPrint( LOG_NOTICE, "<%d> Received Frame #%d (index %d, prev %d)",
                                   childNum, frameNum, indexIn, indexInPrev );
 
+#if 0
             /* Repack into 32bit RGBA structures */
             frameToUnsignedInt( frameIn, buffer, width, height );
 
@@ -199,6 +222,7 @@ void do_child( int childNum )
 
             /* Repack into the YUV444P of the output frame */
             unsignedIntToFrame( buffer, frameOut, width, height );
+#endif
 
             queueSendBinary( Q_MSG_FRAME_DONE, &frameMsg, sizeof( frameMsg ) );
             break;
@@ -346,11 +370,17 @@ void checkGLErrors( const char *label )
  */
 void drawQuad( int w, int h )
 {
+    glPolygonMode(GL_FRONT,GL_FILL);
+
     glBegin(GL_QUADS);
+    glTexCoord2f(0.0, 0.0);
     glVertex2f(0.0, 0.0);
+    glTexCoord2f(w, 0.0);
     glVertex2f(w, 0.0);
     glVertex2f(w, h);
+    glTexCoord2f(w, h);
     glVertex2f(0.0, h);
+    glTexCoord2f(0.0, h);
     glEnd();
 }
 
@@ -413,7 +443,8 @@ void swap( void )
  * Sets up a floating point texture with NEAREST filtering.
  * (mipmaps etc. are unsupported for floating point textures)
  */
-void setupTexture(const GLuint texID, int x, int y)
+void setupTexture(const GLuint texID, GLenum format, GLenum inFormat, int x, 
+                  int y)
 {
     /* make active and bind */
     glBindTexture(texTarget,texID);
@@ -421,12 +452,11 @@ void setupTexture(const GLuint texID, int x, int y)
     /* turn off filtering and wrap modes */
     glTexParameteri(texTarget, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(texTarget, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_CLAMP);
-    glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_CLAMP);
+    glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     /* define texture with floating point format */
-    glTexImage2D( texTarget, 0, texInternalFormat, x, y, 0, texFormat, 
-                  GL_FLOAT, 0 );
+    glTexImage2D( texTarget, 0, format, x, y, 0, inFormat, GL_FLOAT, 0 );
 
     /* check if that worked */
     if (glGetError() != GL_NO_ERROR) {
@@ -447,12 +477,22 @@ void createTextures(int x, int y)
      * write-only, input is just read-only 
      */
     glGenTextures(2, pingpongTexID);
-    glGenTextures(1, &inputTexID);
+    glGenTextures(1, &frameTexID);
+    glGenTextures(1, &prevFrameTexID);
+    glGenTextures(1, &yTexID);
+    glGenTextures(1, &uTexID);
+    glGenTextures(1, &vTexID);
 
     /* set up textures */
-    setupTexture(pingpongTexID[readTex], x, y);
-    setupTexture(pingpongTexID[writeTex], x, y);
-    setupTexture(inputTexID, x, y);
+    setupTexture(pingpongTexID[readTex],  texIntFormat, texFormat, x, y);
+    setupTexture(pingpongTexID[writeTex], texIntFormat, texFormat, x, y);
+    setupTexture(frameTexID,              texIntFormat, texFormat, x, y);
+    setupTexture(prevFrameTexID,          texIntFormat, texFormat, x, y);
+
+    /* The Y, U & V input textures */
+    setupTexture(yTexID, texIntFormatInout, texFormatInout, x,     y);
+    setupTexture(uTexID, texIntFormatInout, texFormatInout, x / 2, y / 2);
+    setupTexture(vTexID, texIntFormatInout, texFormatInout, x / 2, y / 2);
 
     /* attach pingpong textures to FBO */
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT,
@@ -472,16 +512,51 @@ void createTextures(int x, int y)
     }
 }
 
-void loadFrame(uint32 *data, int x, int y)
+void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y, 
+               GLuint texID)
 {
+    CGparameter yTexParam, uTexParam, vTexParam;
+
     /* transfer data vector to input texture */
-    glBindTexture(texTarget, inputTexID);
-    glTexSubImage2D(texTarget, 0, 0, 0, x, y, texFormat, 
-                    GL_UNSIGNED_INT_8_8_8_8, data);
+    glBindTexture(texTarget, yTexID);
+    glTexSubImage2D(texTarget, 0, 0, 0, x, y, texFormatInout, GL_UNSIGNED_BYTE,
+                    yData);
+
+    glBindTexture(texTarget, uTexID);
+    glTexSubImage2D(texTarget, 0, 0, 0, x / 2, y / 2, texFormatInout, 
+                    GL_UNSIGNED_BYTE, uData);
+
+    glBindTexture(texTarget, uTexID);
+    glTexSubImage2D(texTarget, 0, 0, 0, x / 2, y / 2, texFormatInout, 
+                    GL_UNSIGNED_BYTE, vData);
 
     /* check if something went completely wrong */
     checkGLErrors("createTextures()");
+
+    if( !cgIsProgramCompiled( frProgYUV420pIn ) ) {
+        cgCompileProgram( frProgYUV420pIn );
+    }
+
+    yTexParam = cgGetNamedParameter( frProgYUV420pIn, "Ytex" );
+    uTexParam = cgGetNamedParameter( frProgYUV420pIn, "Utex" );
+    vTexParam = cgGetNamedParameter( frProgYUV420pIn, "Vtex" );
+
+    cgGLSetTextureParameter( yTexParam, yTexID );
+    cgGLSetTextureParameter( uTexParam, uTexID );
+    cgGLSetTextureParameter( vTexParam, vTexID );
+
+    cgGLEnableTextureParameter( yTexParam );
+    cgGLEnableTextureParameter( uTexParam );
+    cgGLEnableTextureParameter( vTexParam );
+
+    cgGLBindProgram( frProgYUV420pIn );
+
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT2_EXT, 
+                              texTarget, texID, 0);
+    glDrawBuffer( GL_COLOR_ATTACHMENT2_EXT );
+    drawQuad( x, y );
 }
+
 
 /*
  * vim:ts=4:sw=4:ai:et:si:sts=4

@@ -28,6 +28,8 @@ GJH_CHECK_LIB(glut, glutInit)
 GJH_CHECK_LIB(GLEW, glewInit)
 GJH_CHECK_LIB(GL,   glAccum)
 GJH_CHECK_LIB(pthread, pthread_create)
+GJH_CHECK_LIB(Cg, cgCompileProgram)
+GJH_CHECK_LIB(CgGL, cgGLBindProgram)
 
 # Check version of GLEW >= 1.3.1 (where framebuffer objects got supported)
 MIN_GLEW_VERSION='1.3.1'

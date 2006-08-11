@@ -19,6 +19,12 @@
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
+/* Define to 1 if you have the `Cg' library (-lCg). */
+#undef HAVE_LIBCG
+
+/* Define to 1 if you have the `CgGL' library (-lCgGL). */
+#undef HAVE_LIBCGGL
+
 /* Define to 1 if you have the `GL' library (-lGL). */
 #undef HAVE_LIBGL
 
