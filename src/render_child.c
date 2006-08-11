@@ -52,7 +52,7 @@ void SoftExitChild( void );
 void setupCardInfo( int childNum );
 void initFBO( int x, int y );
 void checkGLErrors( const char *label );
-void drawQuad( int w, int h );
+void drawQuad( int wTex, int hTex, int wOut, int hOut );
 bool checkFramebufferStatus( void );
 void swap( void );
 void setupTexture(const GLuint texID, GLenum format, GLenum inFormat, int x, 
@@ -368,19 +368,19 @@ void checkGLErrors( const char *label )
 /*
  * Renders w x h quad in top left corner of the viewport.
  */
-void drawQuad( int w, int h )
+void drawQuad( int wTex, int hTex, int wOut, int hOut );
 {
     glPolygonMode(GL_FRONT,GL_FILL);
 
     glBegin(GL_QUADS);
     glTexCoord2f(0.0, 0.0);
     glVertex2f(0.0, 0.0);
-    glTexCoord2f(w, 0.0);
-    glVertex2f(w, 0.0);
-    glVertex2f(w, h);
-    glTexCoord2f(w, h);
-    glVertex2f(0.0, h);
-    glTexCoord2f(0.0, h);
+    glTexCoord2f(wTex, 0.0);
+    glVertex2f(wOut, 0.0);
+    glTexCoord2f(wTex, hTex);
+    glVertex2f(wOut, hOut);
+    glTexCoord2f(0.0, hTex);
+    glVertex2f(0.0, hOut);
     glEnd();
 }
 
@@ -554,7 +554,7 @@ void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT2_EXT, 
                               texTarget, texID, 0);
     glDrawBuffer( GL_COLOR_ATTACHMENT2_EXT );
-    drawQuad( x, y );
+    drawQuad( x, y, x, y );
 }
 
 
