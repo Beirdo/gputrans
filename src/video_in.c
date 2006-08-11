@@ -164,7 +164,7 @@ bool getFrame( AVPicture *pict, int pix_fmt )
 
             if (got_picture) {
                 /* Got a frame, extract the video, converting to the desired
-                 * output format (normally PIX_FMT_YUV444P, but uses
+                 * output format (normally PIX_FMT_YUV420P, but uses
                  * PIX_FMT_RGB24 for test_decode)
                  */
                 if( GlobalAbort ) {
@@ -240,7 +240,7 @@ void initVideoIn( sharedMem_t *sharedMem, int cols, int rows )
 
     sharedMem->cols = cols;
     sharedMem->rows = rows;
-    sharedMem->frameSize  = avpicture_get_size( PIX_FMT_YUV444P, cols, rows );
+    sharedMem->frameSize  = avpicture_get_size( PIX_FMT_YUV420P, cols, rows );
 
     LogPrint( LOG_NOTICE, "Frame Size = %d", sharedMem->frameSize );
 
@@ -283,13 +283,13 @@ void initVideoIn( sharedMem_t *sharedMem, int cols, int rows )
     for( i = 0; i < sharedMem->frameCountIn; i++ ) {
         offset = sharedMem->frameSize * i;
         avpicture_fill(&avFrameIn[i], &frameBlock[offset], 
-                       PIX_FMT_YUV444P, cols, rows);
+                       PIX_FMT_YUV420P, cols, rows);
     }
 
     for( i = 0; i < sharedMem->frameCountOut; i++ ) {
         offset = sharedMem->frameSize * (i + sharedMem->frameCountIn);
         avpicture_fill(&avFrameOut[i], &frameBlock[offset], 
-                       PIX_FMT_YUV444P, cols, rows);
+                       PIX_FMT_YUV420P, cols, rows);
     }
 }
 
@@ -372,7 +372,7 @@ void *VideoInThread( void *arg )
             continue;
         }
 
-        if( !getFrame( pict, PIX_FMT_YUV444P ) ) {
+        if( !getFrame( pict, PIX_FMT_YUV420P ) ) {
             done = TRUE;
             msg = (ChildMsg_t *)malloc(sizeof(ChildMsg_t));
             msg->type = CHILD_RENDER_FRAME;
@@ -437,7 +437,7 @@ void videoOut( int frameNum, int index )
                          sharedMem->rows );
         init = TRUE;
     }
-    img_convert(&pict, PIX_FMT_RGB24, &avFrameOut[index], PIX_FMT_YUV444P, 
+    img_convert(&pict, PIX_FMT_RGB24, &avFrameOut[index], PIX_FMT_YUV420P, 
                 sharedMem->cols, sharedMem->rows);
     save_ppm( pict.data[0], sharedMem->cols, sharedMem->rows, 3, filename );
 }

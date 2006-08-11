@@ -62,6 +62,8 @@ void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
                GLuint texID);
 void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y, 
                  GLuint texID);
+void attachPingPongFBOs( void );
+void detachFBOs( void );
 
 extern int              idShm, idSem, idFrame;
 extern char            *shmBlock;
@@ -72,7 +74,6 @@ static int              me;
 static bool             initialized = FALSE;
 static int              width, height;
 static int              mode;
-static unsigned int    *buffer = NULL;
 
 GLuint                  glutWindowHandle;
 GLuint                  fb;
@@ -121,6 +122,7 @@ void do_child( int childNum )
     unsigned char  *frameIn;
     unsigned char  *frameInPrev;
     unsigned char  *frameOut;
+    unsigned char  *yIn, *uIn, *vIn, *yOut, *uOut, *vOut;
     int             frameSize;
     int             frameNum;
     int             indexIn;
@@ -184,34 +186,46 @@ void do_child( int childNum )
                                   childNum, mode, width, height, 
                                   sharedMem->frameSize );
 
+            initFBO(width, height);
+            createTextures(width, height);
+
+            glEnable( GL_FRAGMENT_PROGRAM_NV );
+            checkGLErrors("glEnable");
+
             frProgYUV420pIn = 
                 cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420p, 
                                          fragmentProfile, "yuv_input", NULL );
+            LogPrint( LOG_NOTICE, "<%d> YUV420pIn (%ld): %s", childNum,
+                                  (long)frProgYUV420pIn,
+                                  cgGetLastListing( cgContext ) );
+
             frProgY420pOut = 
                 cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420p, 
                                          fragmentProfile, "y_output", NULL );
+            LogPrint( LOG_NOTICE, "<%d> Y420pOut (%ld): %s", childNum,
+                                  (long)frProgY420pOut,
+                                  cgGetLastListing( cgContext ) );
+
             frProgU420pOut = 
                 cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420p, 
                                          fragmentProfile, "u_output", NULL );
+            LogPrint( LOG_NOTICE, "<%d> U420pOut (%ld): %s", childNum,
+                                  (long)frProgU420pOut,
+                                  cgGetLastListing( cgContext ) );
+
             frProgV420pOut = 
                 cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420p, 
                                          fragmentProfile, "v_output", NULL );
+            LogPrint( LOG_NOTICE, "<%d> V420pOut (%ld): %s", childNum,
+                                  (long)frProgV420pOut,
+                                  cgGetLastListing( cgContext ) );
 
             cgGLEnableProfile(fragmentProfile);
 
-            LogPrint( LOG_NOTICE, "<%d> YUV420pIn: %s", 
-                                  cgGetLastListing( cgContext ) );
-    
             sleep(1);
             queueSendBinary( Q_MSG_RENDER_READY, &childNum, sizeof(childNum) );
             break;
         case CHILD_RENDER_FRAME:
-            if( !buffer ) {
-                LogPrint( LOG_CRIT, "<%d> Received frame before mode!!", 
-                                    childNum );
-                break;
-            }
-
             frameNum    = message->payload.renderFrame.frameNum;
             indexIn     = message->payload.renderFrame.indexIn;
             indexInPrev = message->payload.renderFrame.indexInPrev;
@@ -224,18 +238,24 @@ void do_child( int childNum )
             frameInPrev = frameInBase  + (frameSize * indexInPrev);
             frameOut    = frameOutBase + (frameSize * indexIn);
 
+            yIn = frameIn;
+            uIn = yIn + (width * height);
+            vIn = uIn + ((width * height) / 4);
+
+            yOut = frameOut;
+            uOut = yOut + (width * height);
+            vOut = uOut + ((width * height) / 4);
+
             LogPrint( LOG_NOTICE, "<%d> Received Frame #%d (index %d, prev %d)",
                                   childNum, frameNum, indexIn, indexInPrev );
 
-#if 0
-            /* Repack into 32bit RGBA structures */
-            frameToUnsignedInt( frameIn, buffer, width, height );
+            /* Load the frame into the GPU */
+            loadFrame( yIn, uIn, vIn, width, height, frameTexID );
 
             /* Pretend to have done some work */
 
-            /* Repack into the YUV444P of the output frame */
-            unsignedIntToFrame( buffer, frameOut, width, height );
-#endif
+            /* Pull the output frame out of the GPU */
+            unloadFrame( yOut, uOut, vOut, width, height, frameTexID );
 
             queueSendBinary( Q_MSG_FRAME_DONE, &frameMsg, sizeof( frameMsg ) );
             break;
@@ -264,11 +284,6 @@ void SoftExitChild( void )
     if( frameBlock ) {
         shmdt( frameBlock );
         frameBlock = NULL;
-    }
-
-    if( buffer ) {
-        free( buffer );
-        buffer = NULL;
     }
 
     sleep( 1 );
@@ -372,8 +387,8 @@ void checkGLErrors( const char *label )
 
     if ((errCode = glGetError()) != GL_NO_ERROR) {
         errStr = gluErrorString(errCode);
-        LogPrint( LOG_CRIT, "<%d> OpenGL ERROR: %s  (Label: %s)", errStr,
-                            label );
+        LogPrint( LOG_CRIT, "<%d> OpenGL ERROR %04X: %s  (Label: %s)", me, 
+                            errCode, errStr, label );
         exit( 1 );
     }
 }
@@ -384,17 +399,24 @@ void checkGLErrors( const char *label )
 void drawQuad( int wTex, int hTex, int wOut, int hOut )
 {
     glPolygonMode(GL_FRONT,GL_FILL);
+    checkGLErrors("glPolygonMode");
 
     glBegin(GL_QUADS);
+
     glTexCoord2f(0.0, 0.0);
     glVertex2f(0.0, 0.0);
+
     glTexCoord2f(wTex, 0.0);
     glVertex2f(wOut, 0.0);
+
     glTexCoord2f(wTex, hTex);
     glVertex2f(wOut, hOut);
+
     glTexCoord2f(0.0, hTex);
     glVertex2f(0.0, hOut);
+
     glEnd();
+    checkGLErrors("glEnd");
 }
 
 
@@ -461,23 +483,18 @@ void setupTexture(const GLuint texID, GLenum format, GLenum inFormat, int x,
 {
     /* make active and bind */
     glBindTexture(texTarget,texID);
+    checkGLErrors("glBindTexture(setupTexture)");
 
     /* turn off filtering and wrap modes */
     glTexParameteri(texTarget, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(texTarget, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_CLAMP);
+    glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_CLAMP);
 
     /* define texture with floating point format */
-    glTexImage2D( texTarget, 0, format, x, y, 0, inFormat, GL_FLOAT, 0 );
-
-    /* check if that worked */
-    if (glGetError() != GL_NO_ERROR) {
-        LogPrint( LOG_CRIT, "<%d> glTexImage2D():\t\t\t [FAIL]", me );
-        exit(1);
-    } else {
-        LogPrint( LOG_NOTICE, "<%d> glTexImage2D():\t\t\t [PASS]", me );
-    }
+    glTexImage2D( texTarget, 0, format, x, y, 0, inFormat, GL_UNSIGNED_BYTE, 
+                  NULL );
+    checkGLErrors("glTexImage2D()");
 }
 
 /*
@@ -506,23 +523,6 @@ void createTextures(int x, int y)
     setupTexture(yTexID, texIntFormatInout, texFormatInout, x,     y);
     setupTexture(uTexID, texIntFormatInout, texFormatInout, x / 2, y / 2);
     setupTexture(vTexID, texIntFormatInout, texFormatInout, x / 2, y / 2);
-
-    /* attach pingpong textures to FBO */
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT,
-                              attachmentpoints[writeTex], texTarget,
-                              pingpongTexID[writeTex], 0);
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT,
-                              attachmentpoints[readTex], texTarget,
-                              pingpongTexID[readTex], 0);
-
-    /* check if that worked */
-    if (!checkFramebufferStatus()) {
-        LogPrint( LOG_CRIT, "<%d> glFramebufferTexture2DEXT():\t [FAIL]", me );
-        exit(1);
-    } else {
-        LogPrint( LOG_NOTICE, "<%d> glFramebufferTexture2DEXT():\t [PASS]", 
-                  me );
-    }
 }
 
 void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y, 
@@ -530,24 +530,31 @@ void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
 {
     CGparameter yTexParam, uTexParam, vTexParam;
 
+
     /* transfer data vector to input texture */
     glBindTexture(texTarget, yTexID);
+    checkGLErrors("glBindTexture(Y)");
     glTexSubImage2D(texTarget, 0, 0, 0, x, y, texFormatInout, GL_UNSIGNED_BYTE,
                     yData);
+    checkGLErrors("glTexSubImage2D(Y)");
 
     glBindTexture(texTarget, uTexID);
+    checkGLErrors("glBindTexture(U)");
     glTexSubImage2D(texTarget, 0, 0, 0, x / 2, y / 2, texFormatInout, 
                     GL_UNSIGNED_BYTE, uData);
+    checkGLErrors("glTexSubImage2D(U)");
 
-    glBindTexture(texTarget, uTexID);
+    glBindTexture(texTarget, vTexID);
+    checkGLErrors("glBindTexture(V)");
     glTexSubImage2D(texTarget, 0, 0, 0, x / 2, y / 2, texFormatInout, 
                     GL_UNSIGNED_BYTE, vData);
-
-    /* check if something went completely wrong */
-    checkGLErrors("createTextures()");
+    checkGLErrors("glTexSubImage2D(V)");
 
     if( !cgIsProgramCompiled( frProgYUV420pIn ) ) {
         cgCompileProgram( frProgYUV420pIn );
+            LogPrint( LOG_NOTICE, "<%d> YUV420pIn (%ld): %s", me,
+                                  (long)frProgYUV420pIn,
+                                  cgGetLastListing( cgContext ) );
     }
 
     yTexParam = cgGetNamedParameter( frProgYUV420pIn, "Ytex" );
@@ -562,12 +569,18 @@ void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
     cgGLEnableTextureParameter( uTexParam );
     cgGLEnableTextureParameter( vTexParam );
 
+    cgGLLoadProgram( frProgYUV420pIn );
     cgGLBindProgram( frProgYUV420pIn );
 
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT2_EXT, 
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, texID, 0);
-    glDrawBuffer( GL_COLOR_ATTACHMENT2_EXT );
+    checkFramebufferStatus();
+    checkGLErrors("glFramebufferTexture2DEXT(in)");
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(in)");
     drawQuad( x, y, x, y );
+
+    detachFBOs();
 }
 
 
@@ -585,16 +598,31 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
         cgCompileProgram( frProgY420pOut );
     }
 
+    glBindTexture(texTarget, frameTexID);
+    checkGLErrors("glBindTexture(frameOut)");
     frameParam = cgGetNamedParameter( frProgY420pOut, "frame" );
     cgGLSetTextureParameter( frameParam, texID );
     cgGLEnableTextureParameter( frameParam );
+    cgGLLoadProgram( frProgY420pOut );
     cgGLBindProgram( frProgY420pOut );
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT2_EXT, 
+
+    glBindTexture(texTarget, yTexID);
+    checkGLErrors("glBindTexture(yOut)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, yTexID, 0);
-    glDrawBuffer( GL_COLOR_ATTACHMENT2_EXT );
+    checkGLErrors("glFramebufferTexture2DEXT(yOut)");
+    checkFramebufferStatus();
+
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(yOut)");
     drawQuad( x, y, x, y );
-    glReadBuffer( GL_COLOR_ATTACHMENT2_EXT );
+
+    checkFramebufferStatus();
+
+    glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glReadBuffer(yOut)");
     glReadPixels( 0, 0, x, y, texFormatInout, GL_UNSIGNED_BYTE, yData );
+    checkGLErrors("glReadPixels(yOut)");
 
     /* U Plane */
     if( !cgIsProgramCompiled( frProgU420pOut ) ) {
@@ -604,13 +632,20 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
     frameParam = cgGetNamedParameter( frProgU420pOut, "frame" );
     cgGLSetTextureParameter( frameParam, texID );
     cgGLEnableTextureParameter( frameParam );
+    cgGLLoadProgram( frProgU420pOut );
     cgGLBindProgram( frProgU420pOut );
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT2_EXT, 
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, uTexID, 0);
-    glDrawBuffer( GL_COLOR_ATTACHMENT2_EXT );
+    checkGLErrors("glFramebufferTexture2DEXT(uOut)");
+    checkFramebufferStatus();
+
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(uOut)");
     drawQuad( x, y, x / 2, y / 2 );
-    glReadBuffer( GL_COLOR_ATTACHMENT2_EXT );
+    glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glReadBuffer(uOut)");
     glReadPixels( 0, 0, x / 2, y / 2, texFormatInout, GL_UNSIGNED_BYTE, uData );
+    checkGLErrors("glReadPixels(uOut)");
 
     /* V Plane */
     if( !cgIsProgramCompiled( frProgV420pOut ) ) {
@@ -620,15 +655,57 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
     frameParam = cgGetNamedParameter( frProgV420pOut, "frame" );
     cgGLSetTextureParameter( frameParam, texID );
     cgGLEnableTextureParameter( frameParam );
+    cgGLLoadProgram( frProgV420pOut );
     cgGLBindProgram( frProgV420pOut );
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT2_EXT, 
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, vTexID, 0);
-    glDrawBuffer( GL_COLOR_ATTACHMENT2_EXT );
+    checkGLErrors("glFrameBufferTexture2DEXT(vOut)");
+    checkFramebufferStatus();
+
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(vOut)");
     drawQuad( x, y, x / 2, y / 2 );
-    glReadBuffer( GL_COLOR_ATTACHMENT2_EXT );
+    glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glReadBuffer(vOut)");
     glReadPixels( 0, 0, x / 2, y / 2, texFormatInout, GL_UNSIGNED_BYTE, vData );
+    checkGLErrors("glReadPixels(vOut)");
+
+    detachFBOs();
 }
 
+void detachFBOs( void )
+{
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, 0, 0);
+    checkGLErrors("Detach 0");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT1_EXT, 
+                              texTarget, 0, 0);
+    checkGLErrors("Detach 1");
+}
+
+void attachPingPongFBOs( void )
+{
+    /* attach pingpong textures to FBO */
+    glBindTexture(texTarget, pingpongTexID[writeTex]);
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT,
+                              attachmentpoints[writeTex], texTarget,
+                              pingpongTexID[writeTex], 0);
+    /* check if that worked */
+    if (!checkFramebufferStatus()) {
+        LogPrint( LOG_CRIT, "<%d> glFramebufferTexture2DEXT(0): [FAIL]", me );
+        exit(1);
+    }
+
+    glBindTexture(texTarget, pingpongTexID[readTex]);
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT,
+                              attachmentpoints[readTex], texTarget,
+                              pingpongTexID[readTex], 0);
+    /* check if that worked */
+    if (!checkFramebufferStatus()) {
+        LogPrint( LOG_CRIT, "<%d> glFramebufferTexture2DEXT(1): [FAIL]", me );
+        exit(1);
+    }
+}
 
 /*
  * vim:ts=4:sw=4:ai:et:si:sts=4
