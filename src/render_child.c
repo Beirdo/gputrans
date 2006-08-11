@@ -60,6 +60,8 @@ void setupTexture(const GLuint texID, GLenum format, GLenum inFormat, int x,
 void createTextures(int x, int y);
 void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y, 
                GLuint texID);
+void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y, 
+                 GLuint texID);
 
 extern int              idShm, idSem, idFrame;
 extern char            *shmBlock;
@@ -93,7 +95,8 @@ GLuint                  yTexID, uTexID, vTexID;
 
 CGcontext               cgContext;
 CGprofile               fragmentProfile = CG_PROFILE_FP30;
-CGprogram               frProgYUV420pIn;
+CGprogram               frProgYUV420pIn, frProgY420pOut, frProgU420pOut;
+CGprogram               frProgV420pOut;
                                                
 char *frSrcYUV420p = "yuv420p.cg";
 
@@ -184,6 +187,16 @@ void do_child( int childNum )
             frProgYUV420pIn = 
                 cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420p, 
                                          fragmentProfile, "yuv_input", NULL );
+            frProgY420pOut = 
+                cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420p, 
+                                         fragmentProfile, "y_output", NULL );
+            frProgU420pOut = 
+                cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420p, 
+                                         fragmentProfile, "u_output", NULL );
+            frProgV420pOut = 
+                cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420p, 
+                                         fragmentProfile, "v_output", NULL );
+
             cgGLEnableProfile(fragmentProfile);
 
             LogPrint( LOG_NOTICE, "<%d> YUV420pIn: %s", 
@@ -368,7 +381,7 @@ void checkGLErrors( const char *label )
 /*
  * Renders w x h quad in top left corner of the viewport.
  */
-void drawQuad( int wTex, int hTex, int wOut, int hOut );
+void drawQuad( int wTex, int hTex, int wOut, int hOut )
 {
     glPolygonMode(GL_FRONT,GL_FILL);
 
@@ -555,6 +568,65 @@ void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
                               texTarget, texID, 0);
     glDrawBuffer( GL_COLOR_ATTACHMENT2_EXT );
     drawQuad( x, y, x, y );
+}
+
+
+void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y, 
+                 GLuint texID)
+{
+    CGparameter frameParam;
+
+    /* Since we want the output frame to be in YUV420P, we need to transfer
+     * each plane separately, which means unpacking the pixels.
+     */
+
+    /* Y Plane */
+    if( !cgIsProgramCompiled( frProgY420pOut ) ) {
+        cgCompileProgram( frProgY420pOut );
+    }
+
+    frameParam = cgGetNamedParameter( frProgY420pOut, "frame" );
+    cgGLSetTextureParameter( frameParam, texID );
+    cgGLEnableTextureParameter( frameParam );
+    cgGLBindProgram( frProgY420pOut );
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT2_EXT, 
+                              texTarget, yTexID, 0);
+    glDrawBuffer( GL_COLOR_ATTACHMENT2_EXT );
+    drawQuad( x, y, x, y );
+    glReadBuffer( GL_COLOR_ATTACHMENT2_EXT );
+    glReadPixels( 0, 0, x, y, texFormatInout, GL_UNSIGNED_BYTE, yData );
+
+    /* U Plane */
+    if( !cgIsProgramCompiled( frProgU420pOut ) ) {
+        cgCompileProgram( frProgU420pOut );
+    }
+
+    frameParam = cgGetNamedParameter( frProgU420pOut, "frame" );
+    cgGLSetTextureParameter( frameParam, texID );
+    cgGLEnableTextureParameter( frameParam );
+    cgGLBindProgram( frProgU420pOut );
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT2_EXT, 
+                              texTarget, uTexID, 0);
+    glDrawBuffer( GL_COLOR_ATTACHMENT2_EXT );
+    drawQuad( x, y, x / 2, y / 2 );
+    glReadBuffer( GL_COLOR_ATTACHMENT2_EXT );
+    glReadPixels( 0, 0, x / 2, y / 2, texFormatInout, GL_UNSIGNED_BYTE, uData );
+
+    /* V Plane */
+    if( !cgIsProgramCompiled( frProgV420pOut ) ) {
+        cgCompileProgram( frProgV420pOut );
+    }
+
+    frameParam = cgGetNamedParameter( frProgV420pOut, "frame" );
+    cgGLSetTextureParameter( frameParam, texID );
+    cgGLEnableTextureParameter( frameParam );
+    cgGLBindProgram( frProgV420pOut );
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT2_EXT, 
+                              texTarget, vTexID, 0);
+    glDrawBuffer( GL_COLOR_ATTACHMENT2_EXT );
+    drawQuad( x, y, x / 2, y / 2 );
+    glReadBuffer( GL_COLOR_ATTACHMENT2_EXT );
+    glReadPixels( 0, 0, x / 2, y / 2, texFormatInout, GL_UNSIGNED_BYTE, vData );
 }
 
 
