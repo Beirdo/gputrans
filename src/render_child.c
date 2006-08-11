@@ -53,7 +53,7 @@ void setupCardInfo( int childNum );
 void initFBO( int x, int y );
 void checkGLErrors( const char *label );
 void drawQuad( int wTex, int hTex, int wOut, int hOut );
-bool checkFramebufferStatus( void );
+bool checkFramebufferStatus( int index );
 void swap( void );
 void setupTexture(const GLuint texID, GLenum format, GLenum inFormat, int x, 
                   int y);
@@ -84,9 +84,9 @@ int                     readTex = 1;
 GLenum                  attachmentpoints[] = { GL_COLOR_ATTACHMENT0_EXT, 
                                                GL_COLOR_ATTACHMENT1_EXT };
  
-GLenum                  texTarget         = GL_TEXTURE_RECTANGLE_ARB;
+GLenum                  texTarget         = GL_TEXTURE_RECTANGLE_NV;
 GLenum                  texIntFormatInout = GL_FLOAT_R16_NV;
-GLenum                  texIntFormat      = GL_FLOAT_RGB32_NV;
+GLenum                  texIntFormat      = GL_RGB16; /*GL_FLOAT_RGB32_NV; */
 GLenum                  texFormatInout    = GL_LUMINANCE;
 GLenum                  texFormat         = GL_RGB;
 
@@ -186,11 +186,13 @@ void do_child( int childNum )
                                   childNum, mode, width, height, 
                                   sharedMem->frameSize );
 
+            glEnable( GL_FRAGMENT_PROGRAM_NV );
+            checkGLErrors("glEnable1");
+            glEnable( GL_TEXTURE_RECTANGLE_NV );
+            checkGLErrors("glEnable2");
+
             initFBO(width, height);
             createTextures(width, height);
-
-            glEnable( GL_FRAGMENT_PROGRAM_NV );
-            checkGLErrors("glEnable");
 
             frProgYUV420pIn = 
                 cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420p, 
@@ -424,7 +426,7 @@ void drawQuad( int wTex, int hTex, int wOut, int hOut )
  * Checks framebuffer status.
  * Copied directly out of the spec, modified to deliver a return value.
  */
-bool checkFramebufferStatus( void )
+bool checkFramebufferStatus( int index )
 {
     GLenum          status;
 
@@ -434,31 +436,32 @@ bool checkFramebufferStatus( void )
         return( TRUE );
         break;
     case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT_EXT:
-        LogPrint( LOG_NOTICE, "<%d> Framebuffer incomplete, incomplete "
-                              "attachment", me );
+        LogPrint( LOG_NOTICE, "<%d> (%d) Framebuffer incomplete, incomplete "
+                              "attachment", index, me );
         break;
     case GL_FRAMEBUFFER_UNSUPPORTED_EXT:
-        LogPrint( LOG_NOTICE, "<%d> Unsupported framebuffer format", me );
+        LogPrint( LOG_NOTICE, "<%d> (%d) Unsupported framebuffer format", index,
+                              me );
         break;
     case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT_EXT:
-        LogPrint( LOG_NOTICE, "<%d> Framebuffer incomplete, missing "
-                              "attachment", me );
+        LogPrint( LOG_NOTICE, "<%d> (%d) Framebuffer incomplete, missing "
+                              "attachment", index, me );
         break;
     case GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS_EXT:
-        LogPrint( LOG_NOTICE, "<%d> Framebuffer incomplete, attached images "
-                              "must have same dimensions", me );
+        LogPrint( LOG_NOTICE, "<%d> (%d) Framebuffer incomplete, attached "
+                              "images must have same dimensions", index, me );
         break;
     case GL_FRAMEBUFFER_INCOMPLETE_FORMATS_EXT:
-        LogPrint( LOG_NOTICE, "<%d> Framebuffer incomplete, attached images "
-                              "must have same format", me );
+        LogPrint( LOG_NOTICE, "<%d> (%d) Framebuffer incomplete, attached "
+                              "images must have same format", index, me );
         break;
     case GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER_EXT:
-        LogPrint( LOG_NOTICE, "<%d> Framebuffer incomplete, missing draw "
-                              "buffer", me );
+        LogPrint( LOG_NOTICE, "<%d> (%d) Framebuffer incomplete, missing draw "
+                              "buffer", index, me );
         break;
     case GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER_EXT:
-        LogPrint( LOG_NOTICE, "<%d> Framebuffer incomplete, missing read "
-                              "buffer", me );
+        LogPrint( LOG_NOTICE, "<%d> (%d) Framebuffer incomplete, missing read "
+                              "buffer", index, me );
         break;
     }
 
@@ -488,8 +491,8 @@ void setupTexture(const GLuint texID, GLenum format, GLenum inFormat, int x,
     /* turn off filtering and wrap modes */
     glTexParameteri(texTarget, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(texTarget, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_CLAMP);
-    glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_CLAMP);
+    glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     /* define texture with floating point format */
     glTexImage2D( texTarget, 0, format, x, y, 0, inFormat, GL_UNSIGNED_BYTE, 
@@ -574,7 +577,7 @@ void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
 
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, texID, 0);
-    checkFramebufferStatus();
+    checkFramebufferStatus(0);
     checkGLErrors("glFramebufferTexture2DEXT(in)");
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(in)");
@@ -611,13 +614,13 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, yTexID, 0);
     checkGLErrors("glFramebufferTexture2DEXT(yOut)");
-    checkFramebufferStatus();
+    checkFramebufferStatus(1);
 
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(yOut)");
     drawQuad( x, y, x, y );
 
-    checkFramebufferStatus();
+    checkFramebufferStatus(2);
 
     glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glReadBuffer(yOut)");
@@ -637,7 +640,7 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, uTexID, 0);
     checkGLErrors("glFramebufferTexture2DEXT(uOut)");
-    checkFramebufferStatus();
+    checkFramebufferStatus(3);
 
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(uOut)");
@@ -660,7 +663,7 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, vTexID, 0);
     checkGLErrors("glFrameBufferTexture2DEXT(vOut)");
-    checkFramebufferStatus();
+    checkFramebufferStatus(4);
 
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(vOut)");
@@ -691,7 +694,7 @@ void attachPingPongFBOs( void )
                               attachmentpoints[writeTex], texTarget,
                               pingpongTexID[writeTex], 0);
     /* check if that worked */
-    if (!checkFramebufferStatus()) {
+    if (!checkFramebufferStatus(5)) {
         LogPrint( LOG_CRIT, "<%d> glFramebufferTexture2DEXT(0): [FAIL]", me );
         exit(1);
     }
@@ -701,7 +704,7 @@ void attachPingPongFBOs( void )
                               attachmentpoints[readTex], texTarget,
                               pingpongTexID[readTex], 0);
     /* check if that worked */
-    if (!checkFramebufferStatus()) {
+    if (!checkFramebufferStatus(6)) {
         LogPrint( LOG_CRIT, "<%d> glFramebufferTexture2DEXT(1): [FAIL]", me );
         exit(1);
     }
