@@ -95,7 +95,7 @@ CGcontext               cgContext;
 CGprofile               fragmentProfile = CG_PROFILE_FP30;
 CGprogram               frProgYUV420pIn;
                                                
-char *frSrcYUV420pIn = "yuv420p-input.cg";
+char *frSrcYUV420p = "yuv420p.cg";
 
 
 void frameToUnsignedInt( unsigned char *frame, unsigned int *buffer, int cols,
@@ -182,8 +182,8 @@ void do_child( int childNum )
                                   sharedMem->frameSize );
 
             frProgYUV420pIn = 
-                cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420pIn, 
-                                         fragmentProfile, "main", NULL );
+                cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420p, 
+                                         fragmentProfile, "yuv_input", NULL );
             cgGLEnableProfile(fragmentProfile);
 
             LogPrint( LOG_NOTICE, "<%d> YUV420pIn: %s", 
