@@ -31,6 +31,8 @@
 #include <sys/shm.h>
 #include <sys/sem.h>
 #include <sys/msg.h>
+#include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -74,6 +76,9 @@ static int              me;
 static bool             initialized = FALSE;
 static int              width, height;
 static int              mode;
+static int              framesDone = 0;
+static struct timeval   renderStart;
+static bool             rendered = FALSE;
 
 GLuint                  glutWindowHandle;
 GLuint                  fb;
@@ -226,6 +231,8 @@ void do_child( int childNum )
 
             sleep(1);
             queueSendBinary( Q_MSG_RENDER_READY, &childNum, sizeof(childNum) );
+            rendered = TRUE;
+            gettimeofday( &renderStart, NULL );
             break;
         case CHILD_RENDER_FRAME:
             frameNum    = message->payload.renderFrame.frameNum;
@@ -259,6 +266,7 @@ void do_child( int childNum )
             /* Pull the output frame out of the GPU */
             unloadFrame( yOut, uOut, vOut, width, height, frameTexID );
 
+            framesDone++;
             queueSendBinary( Q_MSG_FRAME_DONE, &frameMsg, sizeof( frameMsg ) );
             break;
         default:
@@ -273,6 +281,25 @@ void do_child( int childNum )
 
 void SoftExitChild( void )
 {
+    struct timeval      renderFinish;
+    float               sec;
+    float               fps;
+
+    if( rendered ) {
+        gettimeofday( &renderFinish, NULL );
+        renderFinish.tv_sec  -= renderStart.tv_sec;
+        renderFinish.tv_usec -= renderStart.tv_usec;
+        while( renderFinish.tv_usec < 0L ) {
+            renderFinish.tv_sec--;
+            renderFinish.tv_usec += 1000000L;
+        }
+        sec = (float)renderFinish.tv_sec + 
+              ((float)renderFinish.tv_usec / 1000000.0);
+        fps = (float)framesDone / sec;
+
+        LogPrint( LOG_NOTICE, "<%d> Rendered %d frames in %.6f (%.2f FPS)", me,
+                  framesDone, sec, fps );
+    }
     queueSendBinary( Q_MSG_DYING_GASP, &me, sizeof(me) );
     if( initialized ) {
         glutDestroyWindow (glutWindowHandle);

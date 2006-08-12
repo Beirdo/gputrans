@@ -70,8 +70,8 @@ AVCodec            *codec = NULL;
 QueueObject_t      *ChildMsgQ;
 pthread_t           videoInThreadId;
 static sharedMem_t *sharedMem;
-static int          headIn  = -1;
-static int          tailIn  = 0;
+static volatile int headIn  = -1;
+static volatile int tailIn  = 0;
 extern unsigned long shmmax;
 extern bool         GlobalAbort;
 
