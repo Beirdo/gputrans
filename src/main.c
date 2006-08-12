@@ -75,7 +75,7 @@ pthread_t               mainThreadId;
 unsigned long           shmmax;
 
 void video_in_initialize( sharedMem_t *shared, char *filename );
-void videoFinished( int index );
+void videoFinished( int prevIndex, int currIndex );
 void videoOut( int frameNum, int index );
 
 int main( int argc, char **argv )
@@ -100,7 +100,9 @@ int main( int argc, char **argv )
     logging_initialize();
 
     signal( SIGINT, signal_handler );
+#if 0
     signal( SIGSEGV, signal_handler );
+#endif
     signal( SIGCHLD, signal_child );
 
     LogPrintNoArg( LOG_NOTICE, "Starting gputrans" );
@@ -194,8 +196,9 @@ int main( int argc, char **argv )
             frameMsg = (FrameDoneMsg_t *)msg;
             childNum = frameMsg->childNum;
             frameNum = frameMsg->renderFrame.frameNum;
-            videoFinished( frameMsg->renderFrame.indexInPrev );
             videoOut( frameNum, frameMsg->renderFrame.indexIn );
+            videoFinished( frameMsg->renderFrame.indexInPrev,
+                           frameMsg->renderFrame.indexIn );
             LogPrint( LOG_NOTICE, "Child %d is done frame %d", childNum, 
                                   frameNum );
             sendFrame( childNum );

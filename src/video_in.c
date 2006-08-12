@@ -61,6 +61,7 @@ extern int          numChildren;
 unsigned char      *frameBlock;
 AVPicture          *avFrameIn;
 AVPicture          *avFrameOut;
+int                *used;
 AVFrame            *frame;
 int                 video_index = -1;
 AVFormatContext    *fcx = NULL;
@@ -245,21 +246,27 @@ void initVideoIn( sharedMem_t *sharedMem, int cols, int rows )
     LogPrint( LOG_NOTICE, "Frame Size = %d", sharedMem->frameSize );
 
     maxFrames = (int)(shmmax / sharedMem->frameSize);
-    if( maxFrames < 8 ) {
+    if( maxFrames < 10 ) {
         LogLocalPrint( LOG_CRIT, "In order to work with this video file, you will "
                             "need to increase /proc/sys/kernel/shmmax to at "
-                            "least %ld", ((long)sharedMem->frameSize * 8) );
+                            "least %ld", ((long)sharedMem->frameSize * 10) );
         atexit(SoftExitParent);
         exit( -1 );
     }
     LogPrint( LOG_NOTICE, "Maximum frames in SHM segment: %d", maxFrames );
 
-    sharedMem->frameCountIn = numChildren + 4;
+    sharedMem->frameCountIn = numChildren + 6;
+    if( sharedMem->frameCountIn < 10 ) {
+        sharedMem->frameCountIn = 10;
+    }
     if( sharedMem->frameCountIn > maxFrames / 2 ) {
         sharedMem->frameCountIn = maxFrames / 2;
         LogPrint( LOG_NOTICE, "Limiting in frames to %d", maxFrames / 2 );
     }
-    sharedMem->frameCountOut = numChildren + 4;
+    sharedMem->frameCountOut = numChildren + 6;
+    if( sharedMem->frameCountOut < 10 ) {
+        sharedMem->frameCountOut = 10;
+    }
     if( sharedMem->frameCountOut > maxFrames / 2 ) {
         sharedMem->frameCountOut = maxFrames / 2;
         LogPrint( LOG_NOTICE, "Limiting out frames to %d", maxFrames / 2 );
@@ -279,6 +286,9 @@ void initVideoIn( sharedMem_t *sharedMem, int cols, int rows )
                                      sharedMem->frameCountIn);
     avFrameOut = (AVPicture *)malloc(sizeof(AVPicture) * 
                                      sharedMem->frameCountOut);
+    used       = (int *)malloc(sizeof(int) *
+                               sharedMem->frameCountIn);
+    memset( used, 0, sizeof(int) * sharedMem->frameCountIn );
 
     for( i = 0; i < sharedMem->frameCountIn; i++ ) {
         offset = sharedMem->frameSize * i;
@@ -400,6 +410,8 @@ void *VideoInThread( void *arg )
         msg->payload.renderFrame.indexIn     = curr;
         msg->payload.renderFrame.indexInPrev = prev;
 
+        used[curr] = 2;
+
 #if 0
         LogPrint( LOG_NOTICE, "enqueued frame #%d, head=%d, tail=%d",
                               frameNum, headIn, tailIn );
@@ -415,13 +427,34 @@ void *VideoInThread( void *arg )
     return( NULL );
 }
 
-void videoFinished( int index )
+void videoFinished( int prevIndex, int currIndex )
 {
     int         frameCount;
+    int         i;
+    int         j;
+
+    if( prevIndex != -1 ) {
+        used[prevIndex]--;
+    }
+    used[currIndex]--;
+
+
+    if( used[headIn] != 0 ) {
+        return;
+    }
 
     frameCount = sharedMem->frameCountIn;
 
-    headIn = (index + 1) % frameCount;
+    for( j = 0, i = headIn; j < frameCount && used[i] == 0; j++ ) {
+        i = (i + 1) % frameCount;
+    }
+
+    if( used[i] == 0 ) {
+        /* All the frames are used up? */
+        headIn = tailIn;
+    } else {
+        headIn = i;
+    }
 }
 
 void videoOut( int frameNum, int index )
