@@ -229,7 +229,6 @@ void do_child( int childNum )
 
             cgGLEnableProfile(fragmentProfile);
 
-            sleep(1);
             queueSendBinary( Q_MSG_RENDER_READY, &childNum, sizeof(childNum) );
             rendered = TRUE;
             gettimeofday( &renderStart, NULL );
@@ -274,7 +273,6 @@ void do_child( int childNum )
         }
     }
 
-    sleep(1);
     exit(0);
 }
 
@@ -297,9 +295,10 @@ void SoftExitChild( void )
               ((float)renderFinish.tv_usec / 1000000.0);
         fps = (float)framesDone / sec;
 
-        LogPrint( LOG_NOTICE, "<%d> Rendered %d frames in %.6f (%.2f FPS)", me,
+        LogPrint( LOG_NOTICE, "<%d> %d frames in %.6f (%.2f FPS)", me,
                   framesDone, sec, fps );
     }
+
     queueSendBinary( Q_MSG_DYING_GASP, &me, sizeof(me) );
     if( initialized ) {
         glutDestroyWindow (glutWindowHandle);
