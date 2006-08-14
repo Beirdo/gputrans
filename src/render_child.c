@@ -67,6 +67,7 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
 void attachPingPongFBOs( void );
 void detachFBOs( void );
 void DisplayFPS( void );
+void handleCgError( CGcontext ctx, CGerror err, void *appdata );
 
 extern int              idShm, idSem, idFrame;
 extern char            *shmBlock;
@@ -159,6 +160,7 @@ void do_child( int childNum )
     glewInit();
     cgContext = cgCreateContext();
     cgGLSetOptimalOptions(fragmentProfile);
+    cgSetErrorHandler( handleCgError, NULL );
 
     /* must be done after OpenGL initialization */
     setupCardInfo( childNum );
@@ -455,6 +457,18 @@ void checkGLErrors( const char *label )
                             errCode, errStr, label );
         exit( 1 );
     }
+}
+
+void handleCgError( CGcontext ctx, CGerror err, void *appdata )
+{
+    const char     *listing;
+
+    LogPrint( LOG_NOTICE, "<%d> Cg error: %s", me, cgGetErrorString(err) );
+    listing = cgGetLastListing(ctx);
+    if( listing ) {
+        LogPrint( LOG_NOTICE, "<%d> last listing: %s", me, listing );
+    }
+    exit(-1);
 }
 
 /*
