@@ -303,43 +303,6 @@ void initVideoIn( sharedMem_t *sharedMem, int cols, int rows )
     }
 }
 
-void frameToUnsignedInt( unsigned char *frame, unsigned int *buffer, int cols,
-                         int rows )
-{
-    int             i;
-    unsigned char  *y, *u, *v;
-    int             pixCount;
-
-    pixCount = cols * rows;
-    y = frame;
-    u = y + pixCount;
-    v = u + pixCount;
-
-    for( i = 0; i < pixCount; i++ ) {
-        buffer[i] = (y[i] << 24) + (u[i] << 16) + (v[i] << 8) + (0 << 0);
-    }
-}
-
-void unsignedIntToFrame( unsigned int *buffer, unsigned char *frame, int cols,
-                         int rows )
-{
-    int             i;
-    unsigned char  *y, *u, *v;
-    int             pixCount;
-    unsigned int    val;
-
-    pixCount = cols * rows;
-    y = frame;
-    u = y + pixCount;
-    v = u + pixCount;
-
-    for( i = 0; i < pixCount; i++ ) {
-        val = buffer[i];
-        y[i] = (val >> 24) & 0xFF;
-        u[i] = (val >> 16) & 0xFF;
-        v[i] = (val >>  8) & 0xFF;
-    }
-}
 
 void video_in_initialize( sharedMem_t *shared, char *filename )
 {

@@ -199,8 +199,10 @@ int main( int argc, char **argv )
             videoOut( frameNum, frameMsg->renderFrame.indexIn );
             videoFinished( frameMsg->renderFrame.indexInPrev,
                            frameMsg->renderFrame.indexIn );
+#if 0
             LogPrint( LOG_NOTICE, "Child %d is done frame %d", childNum, 
                                   frameNum );
+#endif
             sendFrame( childNum );
             break;
         default:

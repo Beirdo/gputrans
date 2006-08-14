@@ -66,6 +66,7 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
                  GLuint texID);
 void attachPingPongFBOs( void );
 void detachFBOs( void );
+void DisplayFPS( void );
 
 extern int              idShm, idSem, idFrame;
 extern char            *shmBlock;
@@ -107,11 +108,6 @@ CGprogram               frProgV420pOut;
 char *frSrcYUV420p = "yuv420p.cg";
 
 
-void frameToUnsignedInt( unsigned char *frame, unsigned int *buffer, int cols,
-                         int rows );
-void unsignedIntToFrame( unsigned int *buffer, unsigned char *frame, int cols,
-                         int rows );
-
 void do_child( int childNum )
 {
     int             argc = 3;
@@ -132,6 +128,10 @@ void do_child( int childNum )
     int             frameNum;
     int             indexIn;
     int             indexInPrev;
+    GLuint          tempTexID;
+    int             oldCurr;
+
+    oldCurr = -1;
 
     shmBlock = NULL;
     frameBlock = NULL;
@@ -238,34 +238,66 @@ void do_child( int childNum )
             indexIn     = message->payload.renderFrame.indexIn;
             indexInPrev = message->payload.renderFrame.indexInPrev;
 
-            frameMsg.renderFrame.frameNum = frameNum;
-            frameMsg.renderFrame.indexIn = indexIn;
-            frameMsg.renderFrame.indexInPrev = indexInPrev;
-
             frameIn     = frameInBase  + (frameSize * indexIn);
-            frameInPrev = frameInBase  + (frameSize * indexInPrev);
-            frameOut    = frameOutBase + (frameSize * indexIn);
 
+            if( oldCurr != -1 && indexInPrev == oldCurr ) {
+                /* No need to load previous frame, the GPU already has it */
+                tempTexID      = prevFrameTexID;
+                prevFrameTexID = frameTexID;
+                frameTexID     = tempTexID;
+            } else {
+                /* Setup the previous frame in the GPU */
+                if( indexInPrev != -1 ) {
+                    frameInPrev = frameInBase  + (frameSize * indexInPrev);
+                    /* Setup for the previous frame */
+                    yIn = frameInPrev;
+                } else {
+                    yIn = frameIn;
+                }
+
+                uIn = yIn + (width * height);
+                vIn = uIn + ((width * height) / 4);
+
+                loadFrame( yIn, uIn, vIn, width, height, prevFrameTexID );
+            }
+
+            /* Setup the current frame in the GPU */
             yIn = frameIn;
             uIn = yIn + (width * height);
             vIn = uIn + ((width * height) / 4);
+            loadFrame( yIn, uIn, vIn, width, height, frameTexID );
+
+#if 0
+            LogPrint( LOG_NOTICE, "<%d> Received Frame #%d (index %d, prev %d)",
+                                  childNum, frameNum, indexIn, indexInPrev );
+#endif
+
+            /* Store the current frame index to optimize loading previous
+             * frames later
+             */
+            oldCurr = indexIn;
+
+            /* Pretend to have done some work */
+#if 0
+            usleep( 1000L );
+#endif
+
+            /* Pull the output frame out of the GPU */
+            frameOut    = frameOutBase + (frameSize * indexIn);
 
             yOut = frameOut;
             uOut = yOut + (width * height);
             vOut = uOut + ((width * height) / 4);
-
-            LogPrint( LOG_NOTICE, "<%d> Received Frame #%d (index %d, prev %d)",
-                                  childNum, frameNum, indexIn, indexInPrev );
-
-            /* Load the frame into the GPU */
-            loadFrame( yIn, uIn, vIn, width, height, frameTexID );
-
-            /* Pretend to have done some work */
-
-            /* Pull the output frame out of the GPU */
             unloadFrame( yOut, uOut, vOut, width, height, frameTexID );
 
             framesDone++;
+            if( framesDone % 50 == 0 ) {
+                DisplayFPS();
+            }
+
+            frameMsg.renderFrame.frameNum = frameNum;
+            frameMsg.renderFrame.indexIn = indexIn;
+            frameMsg.renderFrame.indexInPrev = indexInPrev;
             queueSendBinary( Q_MSG_FRAME_DONE, &frameMsg, sizeof( frameMsg ) );
             break;
         default:
@@ -276,27 +308,31 @@ void do_child( int childNum )
     exit(0);
 }
 
-
-void SoftExitChild( void )
+void DisplayFPS( void )
 {
     struct timeval      renderFinish;
     float               sec;
     float               fps;
 
-    if( rendered ) {
-        gettimeofday( &renderFinish, NULL );
-        renderFinish.tv_sec  -= renderStart.tv_sec;
-        renderFinish.tv_usec -= renderStart.tv_usec;
-        while( renderFinish.tv_usec < 0L ) {
-            renderFinish.tv_sec--;
-            renderFinish.tv_usec += 1000000L;
-        }
-        sec = (float)renderFinish.tv_sec + 
-              ((float)renderFinish.tv_usec / 1000000.0);
-        fps = (float)framesDone / sec;
+    gettimeofday( &renderFinish, NULL );
+    renderFinish.tv_sec  -= renderStart.tv_sec;
+    renderFinish.tv_usec -= renderStart.tv_usec;
+    while( renderFinish.tv_usec < 0L ) {
+        renderFinish.tv_sec--;
+        renderFinish.tv_usec += 1000000L;
+    }
+    sec = (float)renderFinish.tv_sec + 
+          ((float)renderFinish.tv_usec / 1000000.0);
+    fps = (float)framesDone / sec;
 
-        LogPrint( LOG_NOTICE, "<%d> %d frames in %.6f (%.2f FPS)", me,
-                  framesDone, sec, fps );
+    LogPrint( LOG_NOTICE, "<%d> %d frames in %.6f (%.2f FPS)", me,
+              framesDone, sec, fps );
+}
+
+void SoftExitChild( void )
+{
+    if( rendered ) {
+        DisplayFPS();
     }
 
     queueSendBinary( Q_MSG_DYING_GASP, &me, sizeof(me) );
