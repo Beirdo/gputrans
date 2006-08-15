@@ -100,9 +100,6 @@ int main( int argc, char **argv )
     logging_initialize();
 
     signal( SIGINT, signal_handler );
-#if 0
-    signal( SIGSEGV, signal_handler );
-#endif
     signal( SIGCHLD, signal_child );
 
     LogPrintNoArg( LOG_NOTICE, "Starting gputrans" );
@@ -323,6 +320,8 @@ void SoftExitParent( void )
         _exit(0);
     }
 
+    /* basically ignore segfaults */
+    signal( SIGSEGV, signal_handler );
     signal( SIGCHLD, SIG_IGN );
 
     while( len >= 0 ) {

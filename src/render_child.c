@@ -68,6 +68,7 @@ void attachPingPongFBOs( void );
 void detachFBOs( void );
 void DisplayFPS( void );
 void handleCgError( CGcontext ctx, CGerror err, void *appdata );
+CGprogram loadCgProgram( char *name, char *file, char *entry );
 
 extern int              idShm, idSem, idFrame;
 extern char            *shmBlock;
@@ -92,9 +93,9 @@ GLenum                  attachmentpoints[] = { GL_COLOR_ATTACHMENT0_EXT,
                                                GL_COLOR_ATTACHMENT1_EXT };
  
 GLenum                  texTarget         = GL_TEXTURE_RECTANGLE_NV;
-GLenum                  texIntFormatInout = GL_FLOAT_R16_NV;
-GLenum                  texIntFormat      = GL_RGB16; /*GL_FLOAT_RGB32_NV; */
-GLenum                  texFormatInout    = GL_LUMINANCE;
+GLenum                  texIntFormatInout = GL_RGB16; /*GL_FLOAT_R16_NV; */
+GLenum                  texIntFormat      = GL_FLOAT_RGB16_NV; /*GL_RGB16;*/
+GLenum                  texFormatInout    = GL_RED; /*GL_LUMINANCE;*/
 GLenum                  texFormat         = GL_RGB;
 
 GLuint                  pingpongTexID[2];
@@ -105,6 +106,21 @@ CGcontext               cgContext;
 CGprofile               fragmentProfile = CG_PROFILE_FP30;
 CGprogram               frProgYUV420pIn, frProgY420pOut, frProgU420pOut;
 CGprogram               frProgV420pOut;
+
+typedef struct {
+    CGprogram  *program;
+    char       *name;
+    char       *file;
+    char       *entry;
+} cgProgram_t;
+
+static cgProgram_t cgPrograms[] = {
+    { &frProgYUV420pIn, "YUV420pIn", "yuv420p.cg", "yuv_input" },
+    { &frProgY420pOut,  "Y420pOut",  "yuv420p.cg", "y_output" },
+    { &frProgU420pOut,  "U420pOut",  "yuv420p.cg", "u_output" },
+    { &frProgV420pOut,  "V420pOut",  "yuv420p.cg", "v_output" }
+};
+static int cgProgramCount = NELEMENTS(cgPrograms);
                                                
 char *frSrcYUV420p = "yuv420p.cg";
 
@@ -131,6 +147,9 @@ void do_child( int childNum )
     int             indexInPrev;
     GLuint          tempTexID;
     int             oldCurr;
+    int             i;
+    cgProgram_t    *prog;
+    int             stride;
 
     oldCurr = -1;
 
@@ -161,6 +180,8 @@ void do_child( int childNum )
     cgContext = cgCreateContext();
     cgGLSetOptimalOptions(fragmentProfile);
     cgSetErrorHandler( handleCgError, NULL );
+    LogPrint( LOG_NOTICE, "<%d> Using Cg version %s", childNum, 
+                          cgGetString(CG_VERSION) );
 
     /* must be done after OpenGL initialization */
     setupCardInfo( childNum );
@@ -201,33 +222,11 @@ void do_child( int childNum )
             initFBO(width, height);
             createTextures(width, height);
 
-            frProgYUV420pIn = 
-                cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420p, 
-                                         fragmentProfile, "yuv_input", NULL );
-            LogPrint( LOG_NOTICE, "<%d> YUV420pIn (%ld): %s", childNum,
-                                  (long)frProgYUV420pIn,
-                                  cgGetLastListing( cgContext ) );
-
-            frProgY420pOut = 
-                cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420p, 
-                                         fragmentProfile, "y_output", NULL );
-            LogPrint( LOG_NOTICE, "<%d> Y420pOut (%ld): %s", childNum,
-                                  (long)frProgY420pOut,
-                                  cgGetLastListing( cgContext ) );
-
-            frProgU420pOut = 
-                cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420p, 
-                                         fragmentProfile, "u_output", NULL );
-            LogPrint( LOG_NOTICE, "<%d> U420pOut (%ld): %s", childNum,
-                                  (long)frProgU420pOut,
-                                  cgGetLastListing( cgContext ) );
-
-            frProgV420pOut = 
-                cgCreateProgramFromFile( cgContext, CG_SOURCE, frSrcYUV420p, 
-                                         fragmentProfile, "v_output", NULL );
-            LogPrint( LOG_NOTICE, "<%d> V420pOut (%ld): %s", childNum,
-                                  (long)frProgV420pOut,
-                                  cgGetLastListing( cgContext ) );
+            for( i = 0; i < cgProgramCount; i++ ) {
+                prog = &cgPrograms[i];
+                *prog->program = loadCgProgram( prog->name, prog->file, 
+                                                prog->entry );
+            }
 
             cgGLEnableProfile(fragmentProfile);
 
@@ -240,6 +239,7 @@ void do_child( int childNum )
             indexIn     = message->payload.renderFrame.indexIn;
             indexInPrev = message->payload.renderFrame.indexInPrev;
 
+            stride      = width * height;
             frameIn     = frameInBase  + (frameSize * indexIn);
 
             if( oldCurr != -1 && indexInPrev == oldCurr ) {
@@ -257,16 +257,16 @@ void do_child( int childNum )
                     yIn = frameIn;
                 }
 
-                uIn = yIn + (width * height);
-                vIn = uIn + ((width * height) / 4);
+                uIn = yIn + stride;
+                vIn = uIn + (stride / 4);
 
                 loadFrame( yIn, uIn, vIn, width, height, prevFrameTexID );
             }
 
             /* Setup the current frame in the GPU */
             yIn = frameIn;
-            uIn = yIn + (width * height);
-            vIn = uIn + ((width * height) / 4);
+            uIn = yIn + stride;
+            vIn = uIn + (stride / 4);
             loadFrame( yIn, uIn, vIn, width, height, frameTexID );
 
 #if 0
@@ -288,8 +288,8 @@ void do_child( int childNum )
             frameOut    = frameOutBase + (frameSize * indexIn);
 
             yOut = frameOut;
-            uOut = yOut + (width * height);
-            vOut = uOut + ((width * height) / 4);
+            uOut = yOut + stride;
+            vOut = uOut + (stride / 4);
             unloadFrame( yOut, uOut, vOut, width, height, frameTexID );
 
             framesDone++;
@@ -308,6 +308,23 @@ void do_child( int childNum )
     }
 
     exit(0);
+}
+
+CGprogram loadCgProgram( char *name, char *file, char *entry )
+{
+    CGprogram       prog;
+    const char     *listing;
+
+    prog = cgCreateProgramFromFile( cgContext, CG_SOURCE, file, 
+                                    fragmentProfile, entry, NULL );
+    LogPrint( LOG_NOTICE, "<%d> fragment program %s loaded (%ld)", me, name, 
+                          (long)prog );
+    listing = cgGetLastListing( cgContext );
+    if( listing ) {
+        LogPrint( LOG_NOTICE, "<%d> listing: %s", me, listing );
+    }
+
+    return( prog );
 }
 
 void DisplayFPS( void )
@@ -513,31 +530,31 @@ bool checkFramebufferStatus( int index )
         break;
     case GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT_EXT:
         LogPrint( LOG_NOTICE, "<%d> (%d) Framebuffer incomplete, incomplete "
-                              "attachment", index, me );
+                              "attachment", me, index );
         break;
     case GL_FRAMEBUFFER_UNSUPPORTED_EXT:
-        LogPrint( LOG_NOTICE, "<%d> (%d) Unsupported framebuffer format", index,
-                              me );
+        LogPrint( LOG_NOTICE, "<%d> (%d) Unsupported framebuffer format", me, 
+                              index );
         break;
     case GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT_EXT:
         LogPrint( LOG_NOTICE, "<%d> (%d) Framebuffer incomplete, missing "
-                              "attachment", index, me );
+                              "attachment", me, index );
         break;
     case GL_FRAMEBUFFER_INCOMPLETE_DIMENSIONS_EXT:
         LogPrint( LOG_NOTICE, "<%d> (%d) Framebuffer incomplete, attached "
-                              "images must have same dimensions", index, me );
+                              "images must have same dimensions", me, index );
         break;
     case GL_FRAMEBUFFER_INCOMPLETE_FORMATS_EXT:
         LogPrint( LOG_NOTICE, "<%d> (%d) Framebuffer incomplete, attached "
-                              "images must have same format", index, me );
+                              "images must have same format", me, index );
         break;
     case GL_FRAMEBUFFER_INCOMPLETE_DRAW_BUFFER_EXT:
         LogPrint( LOG_NOTICE, "<%d> (%d) Framebuffer incomplete, missing draw "
-                              "buffer", index, me );
+                              "buffer", me, index );
         break;
     case GL_FRAMEBUFFER_INCOMPLETE_READ_BUFFER_EXT:
         LogPrint( LOG_NOTICE, "<%d> (%d) Framebuffer incomplete, missing read "
-                              "buffer", index, me );
+                              "buffer", me, index );
         break;
     }
 
@@ -567,8 +584,8 @@ void setupTexture(const GLuint texID, GLenum format, GLenum inFormat, int x,
     /* turn off filtering and wrap modes */
     glTexParameteri(texTarget, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(texTarget, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glTexParameteri(texTarget, GL_TEXTURE_WRAP_S, GL_CLAMP);
+    glTexParameteri(texTarget, GL_TEXTURE_WRAP_T, GL_CLAMP);
 
     /* define texture with floating point format */
     glTexImage2D( texTarget, 0, format, x, y, 0, inFormat, GL_UNSIGNED_BYTE, 
@@ -631,9 +648,6 @@ void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
 
     if( !cgIsProgramCompiled( frProgYUV420pIn ) ) {
         cgCompileProgram( frProgYUV420pIn );
-            LogPrint( LOG_NOTICE, "<%d> YUV420pIn (%ld): %s", me,
-                                  (long)frProgYUV420pIn,
-                                  cgGetLastListing( cgContext ) );
     }
 
     yTexParam = cgGetNamedParameter( frProgYUV420pIn, "Ytex" );
@@ -653,8 +667,8 @@ void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
 
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, texID, 0);
-    checkFramebufferStatus(0);
     checkGLErrors("glFramebufferTexture2DEXT(in)");
+    checkFramebufferStatus(0);
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(in)");
     drawQuad( x, y, x, y );
