@@ -46,6 +46,7 @@ typedef struct {
     int         TexSize;
     int         ViewportDim[2];
     int         ColorAttach;
+    int         DrawBuffers;
 } MaxCap_t;
 
 typedef struct {

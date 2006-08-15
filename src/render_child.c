@@ -93,8 +93,8 @@ GLenum                  attachmentpoints[] = { GL_COLOR_ATTACHMENT0_EXT,
                                                GL_COLOR_ATTACHMENT1_EXT };
  
 GLenum                  texTarget         = GL_TEXTURE_RECTANGLE_NV;
-GLenum                  texIntFormatInout = GL_RGB16; /*GL_FLOAT_R16_NV; */
-GLenum                  texIntFormat      = GL_FLOAT_RGB16_NV; /*GL_RGB16;*/
+GLenum                  texIntFormatInout = GL_RGB8; /*GL_FLOAT_R16_NV; */
+GLenum                  texIntFormat      = GL_RGB16; /*GL_FLOAT_RGB16_NV; GL_RGB16;*/
 GLenum                  texFormatInout    = GL_RED; /*GL_LUMINANCE;*/
 GLenum                  texFormat         = GL_RGB;
 
@@ -420,6 +420,10 @@ void setupCardInfo( int childNum )
         cardInfo->max.ColorAttach = val[0];
         LogPrint( LOG_NOTICE, "<%d> Max Color Attachments: %d", childNum, 
                               cardInfo->max.ColorAttach );
+        glGetIntegerv(GL_MAX_DRAW_BUFFERS, &val[0]);
+        cardInfo->max.DrawBuffers = val[0];
+        LogPrint( LOG_NOTICE, "<%d> Max Draw Buffers: %d", childNum, 
+                              cardInfo->max.DrawBuffers );
     } else {
         LogPrint( LOG_NOTICE, "<%d> Does not support framebuffer objects", 
                               childNum );
@@ -626,6 +630,7 @@ void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
 {
     CGparameter yTexParam, uTexParam, vTexParam;
 
+    detachFBOs();
 
     /* transfer data vector to input texture */
     glBindTexture(texTarget, yTexID);
@@ -681,6 +686,8 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y,
                  GLuint texID)
 {
     CGparameter frameParam;
+
+    detachFBOs();
 
     /* Since we want the output frame to be in YUV420P, we need to transfer
      * each plane separately, which means unpacking the pixels.

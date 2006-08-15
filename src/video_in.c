@@ -75,6 +75,7 @@ static volatile int tailIn  = 0;
 extern unsigned long shmmax;
 extern bool         GlobalAbort;
 
+#define MIN_FRAMEBUFFER     20
 
 void *VideoInThread( void *arg );
 
@@ -246,26 +247,27 @@ void initVideoIn( sharedMem_t *sharedMem, int cols, int rows )
     LogPrint( LOG_NOTICE, "Frame Size = %d", sharedMem->frameSize );
 
     maxFrames = (int)(shmmax / sharedMem->frameSize);
-    if( maxFrames < 10 ) {
-        LogLocalPrint( LOG_CRIT, "In order to work with this video file, you will "
-                            "need to increase /proc/sys/kernel/shmmax to at "
-                            "least %ld", ((long)sharedMem->frameSize * 10) );
+    if( maxFrames < MIN_FRAMEBUFFER ) {
+        LogLocalPrint( LOG_CRIT, "In order to work with this video file, you "
+                                 "will need to increase /proc/sys/kernel/shmmax"
+                                 " to at least %ld", 
+                                 (long)sharedMem->frameSize * MIN_FRAMEBUFFER );
         atexit(SoftExitParent);
         exit( -1 );
     }
     LogPrint( LOG_NOTICE, "Maximum frames in SHM segment: %d", maxFrames );
 
     sharedMem->frameCountIn = numChildren + 6;
-    if( sharedMem->frameCountIn < 10 ) {
-        sharedMem->frameCountIn = 10;
+    if( sharedMem->frameCountIn < MIN_FRAMEBUFFER ) {
+        sharedMem->frameCountIn = MIN_FRAMEBUFFER;
     }
     if( sharedMem->frameCountIn > maxFrames / 2 ) {
         sharedMem->frameCountIn = maxFrames / 2;
         LogPrint( LOG_NOTICE, "Limiting in frames to %d", maxFrames / 2 );
     }
     sharedMem->frameCountOut = numChildren + 6;
-    if( sharedMem->frameCountOut < 10 ) {
-        sharedMem->frameCountOut = 10;
+    if( sharedMem->frameCountOut < MIN_FRAMEBUFFER ) {
+        sharedMem->frameCountOut = MIN_FRAMEBUFFER;
     }
     if( sharedMem->frameCountOut > maxFrames / 2 ) {
         sharedMem->frameCountOut = maxFrames / 2;
