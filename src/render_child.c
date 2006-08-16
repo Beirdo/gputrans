@@ -69,6 +69,9 @@ void detachFBOs( void );
 void DisplayFPS( void );
 void handleCgError( CGcontext ctx, CGerror err, void *appdata );
 CGprogram loadCgProgram( char *name, char *file, char *entry );
+void unloadRaw(uint8 *yData, uint8 *uData, uint8 *vData, 
+               uint8 *yDataOut, uint8 *uDataOut, uint8 *vDataOut,
+               int x, int y, GLuint texID);
 
 extern int              idShm, idSem, idFrame;
 extern char            *shmBlock;
@@ -94,7 +97,7 @@ GLenum                  attachmentpoints[] = { GL_COLOR_ATTACHMENT0_EXT,
  
 GLenum                  texTarget         = GL_TEXTURE_RECTANGLE_NV;
 GLenum                  texIntFormatInout = GL_RGB8; /*GL_FLOAT_R16_NV; */
-GLenum                  texIntFormat      = GL_RGB16; /*GL_FLOAT_RGB16_NV; GL_RGB16;*/
+GLenum                  texIntFormat      = GL_RGB16; /*GL_FLOAT_RGB32_NV; GL_RGB16;*/
 GLenum                  texFormatInout    = GL_RED; /*GL_LUMINANCE;*/
 GLenum                  texFormat         = GL_RGB;
 
@@ -291,8 +294,15 @@ void do_child( int childNum )
             uOut = yOut + stride;
             vOut = uOut + (stride / 4);
             unloadFrame( yOut, uOut, vOut, width, height, frameTexID );
+#if 0
+            unloadRaw( yIn, uIn, vIn, yOut, uOut, vOut, width, height, 
+                       frameTexID );
+#endif
 
             framesDone++;
+#if 0
+            if( framesDone == 4 ) exit(-1);
+#endif
             if( framesDone % 50 == 0 ) {
                 DisplayFPS();
             }
@@ -805,6 +815,53 @@ void attachPingPongFBOs( void )
         LogPrint( LOG_CRIT, "<%d> glFramebufferTexture2DEXT(1): [FAIL]", me );
         exit(1);
     }
+}
+
+void unloadRaw(uint8 *yData, uint8 *uData, uint8 *vData, 
+               uint8 *yDataOut, uint8 *uDataOut, uint8 *vDataOut,
+               int x, int y, GLuint texID)
+{
+    float          *data;
+    FILE           *fp;
+    int             i, j;
+    int             size;
+    int             index, index2, index3;
+
+    size = x * y;
+    data = (float *)malloc(sizeof(float) * size * 3);
+
+    detachFBOs();
+
+    glBindTexture(texTarget, texID);
+    checkGLErrors("glBindTexture(texID)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, texID, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(texID)");
+    checkFramebufferStatus(7);
+
+    glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glReadBuffer(texID)");
+    glReadPixels( 0, 0, x, y, GL_RGB, GL_FLOAT, data );
+    checkGLErrors("glReadPixels(texID)");
+
+    detachFBOs();
+
+    fp = fopen( "crap.out", "wt" );
+
+    for( i = 0; i < y; i++ ) {
+        for( j = 0; j < x; j++ ) {
+            index = j + (i*x);
+            index2 = (j / 2) + ((i /2) * (x / 2));
+            index3 = index * 3;
+
+            fprintf(fp, "Pixel (%d,%d):  I:%d:%d:%d  F:%f:%f:%f  O:%d:%d:%d\n", j, i,
+                    yData[index], uData[index2], vData[index2],
+                    data[index3], data[index3+1], data[index3+2], 
+                    yDataOut[index], uDataOut[index2], vDataOut[index2] );
+        }
+    }
+
+    fclose(fp);
 }
 
 /*

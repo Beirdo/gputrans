@@ -76,6 +76,7 @@ unsigned long           shmmax;
 
 void video_in_initialize( sharedMem_t *shared, char *filename );
 void videoFinished( int prevIndex, int currIndex );
+void videoIn( int frameNum, int index );
 void videoOut( int frameNum, int index );
 
 int main( int argc, char **argv )
@@ -247,6 +248,10 @@ bool sendFrame( int childNum )
                      sizeof(ChildMsg_t) + 
                      ELEMSIZE( renderFrame, ChildMsgPayload_t ) - 
                      ELEMSIZE( payload, ChildMsg_t ) );
+#if 0
+    videoIn( msgFrame->payload.renderFrame.frameNum, 
+             msgFrame->payload.renderFrame.indexIn );
+#endif
     free( msgFrame );
     return( TRUE );
 }

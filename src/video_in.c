@@ -440,6 +440,24 @@ void videoOut( int frameNum, int index )
     save_ppm( pict.data[0], sharedMem->cols, sharedMem->rows, 3, filename );
 }
 
+void videoIn( int frameNum, int index )
+{
+    static char         filename[64];
+    static AVPicture    pict;
+    static bool         init = FALSE;
+
+    sprintf( filename, "in/%05d.ppm", frameNum );
+
+    if( !init ) {
+        avpicture_alloc( &pict, PIX_FMT_RGB24, sharedMem->cols, 
+                         sharedMem->rows );
+        init = TRUE;
+    }
+    img_convert(&pict, PIX_FMT_RGB24, &avFrameIn[index], PIX_FMT_YUV420P, 
+                sharedMem->cols, sharedMem->rows);
+    save_ppm( pict.data[0], sharedMem->cols, sharedMem->rows, 3, filename );
+}
+
 /*
  * vim:ts=4:sw=4:ai:et:si:sts=4
  */
