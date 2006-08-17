@@ -45,6 +45,58 @@ float3 contrast_frame( float2  coord               : TEXCOORD0,
     return value;
 }
 
+float3 diff_frame( float2  coord               : TEXCOORD0,
+                   uniform samplerRECT frameA  : TEXUNIT0,
+                   uniform samplerRECT frameB  : TEXUNIT1) : COLOR
+{
+    string id = "$Id$";
+
+    float3 value;
+
+    value = texRECT( frameA, coord ).xyz - texRECT( frameB, coord ).xyz;
+    value = abs(value);
+
+    return value;
+}
+
+float thresh_diff( float2  coord               : TEXCOORD0,
+                   uniform samplerRECT frame   : TEXUNIT0,
+                   uniform float threshold) : COLOR
+{
+    string id = "$Id$";
+
+    float3 value;
+    float output;
+
+    value = texRECT( frame, coord ).xyz;
+    value -= threshold;
+    value.x = step( 0.0, value.x );
+    value.y = step( 0.0, value.y );
+    value.z = step( 0.0, value.z );
+
+    output = value.x + value.y + value.z;
+
+    return output;
+}
+
+float decimate_thresh_diff( float2  topleft             : TEXCOORD0,
+                            float2  topright            : TEXCOORD1,
+                            float2  bottomright         : TEXCOORD2,
+                            float2  bottomleft          : TEXCOORD3,
+                            uniform samplerRECT frame   : TEXUNIT0 ) : COLOR
+{
+    string id = "$Id$";
+
+    float value;
+
+    value  = texRECT(frame, topleft).x;
+    value += texRECT(frame, topright).x;
+    value += texRECT(frame, bottomleft).x;
+    value += texRECT(frame, bottomright).x;
+    
+    return value;
+}
+
 
 /*
  * vim:ts=4:sw=4:ai:et:si:sts=4
