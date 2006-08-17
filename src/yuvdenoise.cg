@@ -97,6 +97,77 @@ float decimate_thresh_diff( float2  topleft             : TEXCOORD0,
     return value;
 }
 
+float3 move_frame( float2   coord               : TEXCOORD0,
+                   uniform samplerRECT frame    : TEXUNIT0,
+                   uniform samplerRECT vector   : TEXUNIT1 ) : COLOR
+{
+    string id = "$Id$";
+
+    float3 value;
+    float2 newCoord;
+
+    newCoord = coord + texRECT(vector, coord).xy;
+    value = texRECT(frame, newCoord).xyz;
+    
+    return value;
+}
+
+float3 average_frame( float2 coord               : TEXCOORD0,
+                      uniform samplerRECT frame  : TEXUNIT0,
+                      uniform samplerRECT avg    : TEXUNIT1,
+                      uniform float delay ) : COLOR
+{
+    string id = "$Id$";
+
+    float3 value;
+    float3 newval;
+
+    value  = texRECT( avg, coord ).xyz;
+    newval = texRECT( frame, coord ).xyz;
+
+    value = ((value * delay) + newval) / (delay + 1);
+
+    return value;
+}
+
+float thresholded_difference( float2 coord                 : TEXCOORD0,
+                              uniform samplerRECT frameA   : TEXUNIT0,
+                              uniform samplerRECT frameB   : TEXUNIT1,
+                              uniform float threshold ) : COLOR
+{
+    string id = "$Id$";
+
+    float value;
+
+    value = texRECT( frameA, coord ).x - texRECT( frameB, coord ).x;
+    value = abs(value);
+    value = step( threshold, value ) * value;
+
+    return value;
+}
+
+float lowpass_difference( float2 coord              : TEXCOORD0,
+                          uniform samplerRECT frame : TEXUNIT0 ) : COLOR
+{
+    string id = "$Id$";
+
+    float value;
+
+    value  = texRECT( frame, coord ).x;
+    value += texRECT( frame, coord + float2(-1,-1) ).x;
+    value += texRECT( frame, coord + float2(-1, 0) ).x;
+    value += texRECT( frame, coord + float2(-1, 1) ).x;
+    value += texRECT( frame, coord + float2( 0,-1) ).x;
+    value += texRECT( frame, coord + float2( 0, 1) ).x;
+    value += texRECT( frame, coord + float2( 1,-1) ).x;
+    value += texRECT( frame, coord + float2( 1, 0) ).x;
+    value += texRECT( frame, coord + float2( 1, 1) ).x;
+    value /= 9.0;
+
+    value = clamp(4.0 * value * value, 0.0, 1.0);
+
+    return value;
+}
 
 /*
  * vim:ts=4:sw=4:ai:et:si:sts=4
