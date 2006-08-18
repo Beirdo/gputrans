@@ -169,6 +169,91 @@ float lowpass_difference( float2 coord              : TEXCOORD0,
     return value;
 }
 
+float3 correct_frame2( float2 coord                 : TEXCOORD0,
+                       uniform samplerRECT frameA   : TEXUNIT0,
+                       uniform samplerRECT frameB   : TEXUNIT1,
+                       uniform samplerRECT diffY    : TEXUNIT2,
+                       uniform float threshold ) : COLOR
+{
+    string id = "$Id$";
+
+    float3 q;
+    float3 value;
+    float3 valA;
+    float3 valB;
+    float3 f1;
+    float3 f2;
+    float3 output;
+
+    valA  = texRECT( frameA, coord ).xyz;
+    valB  = texRECT( frameB, coord ).xyz;
+    q     = abs( valA - valB );
+    f1    = clamp((q - threshold) / threshold, 0.0, 1.0);
+    f2    = 1.0 - f1;
+
+    value = (valB * f2) + (valA * f1);
+    output.x = ( q.x > threshold ? value.x : valB.x );
+    output.y = ( q.y > threshold ? value.y : valB.y );
+    output.z = ( q.z > threshold ? value.z : valB.z );
+
+    return output;
+}
+
+float3 denoise_frame_pass2( float2 coord                : TEXCOORD0,
+                            uniform samplerRECT frameA  : TEXUNIT0,
+                            uniform samplerRECT frameB  : TEXUNIT1,
+                            uniform float pp_threshold ) : COLOR
+{
+    string id = "$Id$";
+
+    float3 d;
+    float3 valA;
+    float3 valB;
+    float3 f1;
+    float3 f2;
+    float3 output;
+
+    valA = texRECT( frameA, coord ).xyz;
+    valB = texRECT( frameB, coord ).xyz;
+    valB.yz = ( (valB.yz * 2.0) + valA.yz ) / 3.0;
+
+    d       = abs( valA - valB );
+    f1.x    = clamp( d.x / pp_threshold, 0.0, 1.0 );
+    f1.yz   = clamp( (d.yz - pp_threshold) / pp_threshold, 0.0, 1.0 );
+    f2      = 1.0 - f1;
+
+    output = (valA * f1) + (valB * f2);
+
+    return output;
+}
+
+float3 sharpen_frame( float2 coord                : TEXCOORD0,
+                      uniform samplerRECT frame   : TEXUNIT0,
+                      uniform float sharpen ) : COLOR
+{
+    string id = "$Id$";
+
+    float3 value;
+    float d;
+    float m;
+    float3 output;
+
+    value = texRECT( frame, coord ).xyz;
+    m  = value.x;
+    m += texRECT( frame, coord + float2(1,0) ).x;
+    m += texRECT( frame, coord + float2(1,1) ).x;
+    m += texRECT( frame, coord + float2(0,1) ).x;
+    m /= 4.0;
+
+    d  = value.x - m;
+    d *= sharpen;
+
+    output.x = clamp( m+d, 0.062745098, 0.921568627 );
+    output.yz = value.yz;
+
+    return output;
+}
+
 /*
  * vim:ts=4:sw=4:ai:et:si:sts=4
  */
