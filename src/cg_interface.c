@@ -63,7 +63,8 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y);
 void attachPingPongFBOs( void );
 void detachFBOs( void );
 void handleCgError( CGcontext ctx, CGerror err, void *appdata );
-CGprogram loadCgProgram( char *name, char *file, char *entry );
+CGprogram loadCgProgram( char *name, char *file, char *entry, 
+                         CGprofile profile );
 void unloadRaw(uint8 *yData, uint8 *uData, uint8 *vData, 
                uint8 *yDataOut, uint8 *uDataOut, uint8 *vDataOut,
                int x, int y);
@@ -93,19 +94,50 @@ CGprofile               fragmentProfile = CG_PROFILE_FP30;
 CGprofile               vertexProfile   = CG_PROFILE_VP30;
 CGprogram               frProgYUV420pIn, frProgY420pOut, frProgU420pOut;
 CGprogram               frProgV420pOut;
+CGprogram               frProgContrastFrame, frProgDiffFrame, frProgThreshDiff;
+CGprogram               frProgDecimateAdd, frProgMoveFrame, frProgAverageFrame;
+CGprogram               frProgThresholdedDiff, frProgLowpassDiff;
+CGprogram               frProgCorrectFrame2, frProgDenoiseFramePass2;
+CGprogram               frProgSharpenFrame, frProgSAD, frProgSADHalfpel;
+CGprogram               frProgVectorInit, frProgVectorUpdate;
+CGprogram               frProgVectorBadcheck, frProgVectorRange;
+
+CGprogram               vxProgDecimateBy2;
+
+#define FP30 CG_PROFILE_FP30
+#define VP30 CG_PROFILE_VP30
 
 typedef struct {
     CGprogram  *program;
     char       *name;
     char       *file;
     char       *entry;
+    CGprofile   profile;
 } cgProgram_t;
 
 static cgProgram_t cgPrograms[] = {
-    { &frProgYUV420pIn, "YUV420pIn", "yuv420p.cg", "yuv_input" },
-    { &frProgY420pOut,  "Y420pOut",  "yuv420p.cg", "y_output" },
-    { &frProgU420pOut,  "U420pOut",  "yuv420p.cg", "u_output" },
-    { &frProgV420pOut,  "V420pOut",  "yuv420p.cg", "v_output" }
+    { &frProgYUV420pIn, "YUV420pIn", "yuv420p.cg", "yuv_input", FP30 },
+    { &frProgY420pOut,  "Y420pOut",  "yuv420p.cg", "y_output",  FP30 },
+    { &frProgU420pOut,  "U420pOut",  "yuv420p.cg", "u_output",  FP30 },
+    { &frProgV420pOut,  "V420pOut",  "yuv420p.cg", "v_output",  FP30 },
+    { &vxProgDecimateBy2, "DecimateBy2", "decimate.cg", "decimate_by_2", VP30 },
+    { &frProgContrastFrame, "ContrastFrame", "yuvdenoise.cg", "contrast_frame", FP30 },
+    { &frProgDiffFrame, "DiffFrame", "yuvdenoise.cg", "diff_frame", FP30 },
+    { &frProgThreshDiff, "ThreshDiff", "yuvdenoise.cg", "thresh_diff", FP30 },
+    { &frProgDecimateAdd, "DecimateAdd", "yuvdenoise.cg", "decimate_add", FP30 },
+    { &frProgMoveFrame, "MoveFrame", "yuvdenoise.cg", "move_frame", FP30 },
+    { &frProgAverageFrame, "AverageFrame", "yuvdenoise.cg", "average_frame", FP30 },
+    { &frProgThresholdedDiff, "ThresholdedDiff", "yuvdenoise.cg", "thresholded_diff", FP30 },
+    { &frProgLowpassDiff, "LowpassDiff", "yuvdenoise.cg", "lowpass_diff", FP30 },
+    { &frProgCorrectFrame2, "CorrectFrame2", "yuvdenoise.cg", "correct_frame2", FP30 },
+    { &frProgDenoiseFramePass2, "DenoiseFramePass2", "yuvdenoise.cg", "denoise_frame_pass2", FP30 },
+    { &frProgSharpenFrame, "SharpenFrame", "yuvdenoise.cg", "sharpen_frame", FP30 },
+    { &frProgSAD, "SAD", "yuvdenoise.cg", "SAD", FP30 },
+    { &frProgSADHalfpel, "SADHalfpel", "yuvdenoise.cg", "SAD_halfpel", FP30 },
+    { &frProgVectorInit, "VectorInit", "yuvdenoise.cg", "vector_init", FP30 },
+    { &frProgVectorUpdate, "VectorUpdate", "yuvdenoise.cg", "vector_update", FP30 },
+    { &frProgVectorBadcheck, "VectorBadcheck", "yuvdenoise.cg", "vector_badcheck", FP30 },
+    { &frProgVectorRange, "VectorRange", "yuvdenoise.cg", "vector_range", FP30 }
 };
 static int cgProgramCount = NELEMENTS(cgPrograms);
 
@@ -123,6 +155,8 @@ void cg_init( cardInfo_t *cardInfo, int childNum )
     glewInit();
     cgContext = cgCreateContext();
     cgGLSetOptimalOptions(fragmentProfile);
+    cgSetErrorHandler( handleCgError, NULL );
+    cgGLSetOptimalOptions(vertexProfile);
     cgSetErrorHandler( handleCgError, NULL );
     LogPrint( LOG_NOTICE, "<%d> Using Cg version %s", childNum, 
                           cgGetString(CG_VERSION) );
@@ -145,25 +179,31 @@ void cg_enable( int width, int height )
     for( i = 0; i < cgProgramCount; i++ ) {
         prog = &cgPrograms[i];
         *prog->program = loadCgProgram( prog->name, prog->file, 
-                                        prog->entry );
+                                        prog->entry, prog->profile );
     }
 
     cgGLEnableProfile(fragmentProfile);
+#if 0
+    cgGLEnableProfile(vertexProfile);
+#endif
 }
 
 
-CGprogram loadCgProgram( char *name, char *file, char *entry )
+CGprogram loadCgProgram( char *name, char *file, char *entry, 
+                         CGprofile profile )
 {
     CGprogram       prog;
     const char     *listing;
 
     prog = cgCreateProgramFromFile( cgContext, CG_SOURCE, file, 
-                                    fragmentProfile, entry, NULL );
-    LogPrint( LOG_NOTICE, "<%d> fragment program %s loaded (%ld)", me, name, 
+                                    profile, entry, NULL );
+    LogPrint( LOG_NOTICE, "<%d> %s-%s (%ld) loaded", me, 
+                          (profile == FP30 ? "F" : "V" ), name, 
                           (long)prog );
     listing = cgGetLastListing( cgContext );
     if( listing ) {
-        LogPrint( LOG_NOTICE, "<%d> listing: %s", me, listing );
+        LogPrint( LOG_NOTICE, "<%d> %s-%s listing: %s", me, 
+                              (profile == FP30 ? "F" : "V"), name, listing );
     }
 
     return( prog );

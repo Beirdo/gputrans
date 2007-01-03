@@ -79,11 +79,11 @@ float thresh_diff( float2  coord               : TEXCOORD0,
     return output;
 }
 
-float decimate_diff_add( float2  coord0             : TEXCOORD0,
-                         float2  coord1             : TEXCOORD1,
-                         float2  coord2             : TEXCOORD2,
-                         float2  coord3             : TEXCOORD3,
-                         uniform samplerRECT frame  : TEXUNIT0 ) : COLOR
+float decimate_add( float2  coord0             : TEXCOORD0,
+                    float2  coord1             : TEXCOORD1,
+                    float2  coord2             : TEXCOORD2,
+                    float2  coord3             : TEXCOORD3,
+                    uniform samplerRECT frame  : TEXUNIT0 ) : COLOR
 {
     string id = "$Id$";
 
@@ -140,10 +140,10 @@ float3 average_frame( float2 coord               : TEXCOORD0,
     return value;
 }
 
-float thresholded_difference( float2 coord                 : TEXCOORD0,
-                              uniform samplerRECT frameA   : TEXUNIT0,
-                              uniform samplerRECT frameB   : TEXUNIT1,
-                              uniform float threshold ) : COLOR
+float thresholded_diff( float2 coord                 : TEXCOORD0,
+                        uniform samplerRECT frameA   : TEXUNIT0,
+                        uniform samplerRECT frameB   : TEXUNIT1,
+                        uniform float threshold ) : COLOR
 {
     string id = "$Id$";
 
@@ -156,8 +156,8 @@ float thresholded_difference( float2 coord                 : TEXCOORD0,
     return value;
 }
 
-float lowpass_difference( float2 coord              : TEXCOORD0,
-                          uniform samplerRECT frame : TEXUNIT0 ) : COLOR
+float lowpass_diff( float2 coord              : TEXCOORD0,
+                    uniform samplerRECT frame : TEXUNIT0 ) : COLOR
 {
     string id = "$Id$";
 
