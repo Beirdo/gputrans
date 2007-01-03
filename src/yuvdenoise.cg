@@ -79,20 +79,20 @@ float thresh_diff( float2  coord               : TEXCOORD0,
     return output;
 }
 
-float decimate_thresh_diff( float2  topleft             : TEXCOORD0,
-                            float2  topright            : TEXCOORD1,
-                            float2  bottomright         : TEXCOORD2,
-                            float2  bottomleft          : TEXCOORD3,
-                            uniform samplerRECT frame   : TEXUNIT0 ) : COLOR
+float decimate_diff_add( float2  coord0             : TEXCOORD0,
+                         float2  coord1             : TEXCOORD1,
+                         float2  coord2             : TEXCOORD2,
+                         float2  coord3             : TEXCOORD3,
+                         uniform samplerRECT frame  : TEXUNIT0 ) : COLOR
 {
     string id = "$Id$";
 
     float value;
 
-    value  = texRECT(frame, topleft).x;
-    value += texRECT(frame, topright).x;
-    value += texRECT(frame, bottomleft).x;
-    value += texRECT(frame, bottomright).x;
+    value  = texRECT(frame, coord0).x;
+    value += texRECT(frame, coord1).x;
+    value += texRECT(frame, coord2).x;
+    value += texRECT(frame, coord3).x;
     
     return value;
 }
@@ -105,9 +105,19 @@ float3 move_frame( float2   coord               : TEXCOORD0,
 
     float3 value;
     float2 newCoord;
+    float2 vecCoord;
+    float2 vec;
+    float2 q, s;
 
-    newCoord = coord + texRECT(vector, coord).xy;
-    value = texRECT(frame, newCoord).xyz;
+    vecCoord = ((coord - 0.5) / 8.0) + 0.5;
+    vec = texRECT(vector, vecCoord).xy;
+
+    q = int(vec/2.0);
+    s = vec - (q * 2.0);
+
+    value  = texRECT(frame, coord+q).xyz;
+    value += texRECT(frame, coord+q+s).xyz;
+    value /= 2.0;
     
     return value;
 }
@@ -172,7 +182,6 @@ float lowpass_difference( float2 coord              : TEXCOORD0,
 float3 correct_frame2( float2 coord                 : TEXCOORD0,
                        uniform samplerRECT frameA   : TEXUNIT0,
                        uniform samplerRECT frameB   : TEXUNIT1,
-                       uniform samplerRECT diffY    : TEXUNIT2,
                        uniform float threshold ) : COLOR
 {
     string id = "$Id$";
@@ -182,16 +191,17 @@ float3 correct_frame2( float2 coord                 : TEXCOORD0,
     float3 valA;
     float3 valB;
     float3 f1;
-    float3 f2;
     float3 output;
 
     valA  = texRECT( frameA, coord ).xyz;
     valB  = texRECT( frameB, coord ).xyz;
     q     = abs( valA - valB );
     f1    = clamp((q - threshold) / threshold, 0.0, 1.0);
-    f2    = 1.0 - f1;
 
-    value = (valB * f2) + (valA * f1);
+    /*
+    value = (valB * (1.0-f1)) + (valA * f1);
+    */
+    value = lerp( valB, valA, f1 );
     output.x = ( q.x > threshold ? value.x : valB.x );
     output.y = ( q.y > threshold ? value.y : valB.y );
     output.z = ( q.z > threshold ? value.z : valB.z );
@@ -210,7 +220,6 @@ float3 denoise_frame_pass2( float2 coord                : TEXCOORD0,
     float3 valA;
     float3 valB;
     float3 f1;
-    float3 f2;
     float3 output;
 
     valA = texRECT( frameA, coord ).xyz;
@@ -220,9 +229,11 @@ float3 denoise_frame_pass2( float2 coord                : TEXCOORD0,
     d       = abs( valA - valB );
     f1.x    = clamp( d.x / pp_threshold, 0.0, 1.0 );
     f1.yz   = clamp( (d.yz - pp_threshold) / pp_threshold, 0.0, 1.0 );
-    f2      = 1.0 - f1;
 
-    output = (valA * f1) + (valB * f2);
+    /*
+    output = (valA * f1) + (valB * (1.0-f1));
+    */
+    output = lerp(valB, valA, f1);
 
     return output;
 }
@@ -252,6 +263,122 @@ float3 sharpen_frame( float2 coord                : TEXCOORD0,
     output.yz = value.yz;
 
     return output;
+}
+
+float SAD( float2 coord                 : TEXCOORD0,
+           uniform samplerRECT frameA   : TEXUNIT0,
+           uniform samplerRECT frameB   : TEXUNIT1,
+           uniform float  factor,
+           uniform float2 offset ) : COLOR
+{
+    string id = "$Id$";
+
+    float sad;
+    float3 diff;
+
+    sad = 0.0;
+    coord = ((coord - 0.5) * factor) + 0.5;
+    diff = abs( texRECT( frameA, coord ).xyz - 
+                texRECT( frameB, coord + offset ).xyz );
+    sad += diff.x + diff.y + diff.z;
+    
+    return sad;
+}
+
+
+float SAD_halfpel( float2 coord                 : TEXCOORD0,
+                   uniform samplerRECT frameA   : TEXUNIT0,
+                   uniform samplerRECT frameB   : TEXUNIT1,
+                   uniform samplerRECT frameC   : TEXUNIT2,
+                   uniform float  factor,
+                   uniform float2 offsetA,
+                   uniform float2 offsetB ) : COLOR
+{
+    string id = "$Id$";
+
+    float sad;
+    float3 diff;
+
+    sad = 0.0;
+    coord = ((coord - 0.5) * factor) + 0.5;
+    diff = abs( ((texRECT( frameA, coord + offsetA ).xyz + 
+                  texRECT( frameB, coord + offsetB ).xyz ) / 2.0 ) - 
+                texRECT( frameC, coord ).xyz );
+    sad += diff.x + diff.y + diff.z;
+    
+    return sad;
+}
+
+float4 vector_init( float2 coord                : TEXCOORD0 ) : COLOR
+{
+    string id = "$Id$";
+
+    float4 zeros;
+
+    zeros.xyzw = 0.0;
+    return zeros;
+}
+
+float4 vector_update( float2 coord                  : TEXCOORD0,
+                      uniform samplerRECT oldvector : TEXUNIT0,
+                      uniform samplerRECT sadvector : TEXUNIT1,
+                      uniform float x,
+                      uniform float y ) : COLOR
+{
+    string id = "$Id$";
+
+    float4 outvec;
+    float4 oldvec;
+    float sad;
+
+    oldvec = texRECT( oldvector, coord );
+    sad = texRECT( sadvector, coord ).x;
+
+    if( oldvec.w == 0.0 || sad <= oldvec.z ) {
+        outvec.x = x;
+        outvec.y = y;
+        outvec.z = sad;
+        outvec.w = 1.0;
+    } else {
+        outvec = oldvec;
+    }
+
+    return outvec;
+}
+
+float vector_badcheck( float2 coord                 : TEXCOORD0,
+                       uniform samplerRECT vector   : TEXUNIT0,
+                       uniform float block_thresh ) : COLOR
+{
+    string id = "$Id$";
+
+    float bad;
+    float sad;
+
+    sad = texRECT( vector, coord ).z;
+
+    bad = ( sad > block_thresh ? 1.0 : 0.0 ); 
+
+    return bad;
+}
+
+float4 vector_range( float2 coord                   : TEXCOORD0,
+                     uniform samplerRECT vector     : TEXUNIT0,
+                     uniform float2 resolution ) : COLOR
+{
+    string id = "$Id$";
+
+    float4 vec;
+    float2 veccoord;
+
+    vec = texRECT( vector, coord );
+    veccoord.xy = vec.xy + coord - 0.5;
+    if( veccoord.x < 0 || veccoord.x > resolution.x ||
+        veccoord.y < 32 || veccoord.y > resolution.y + 32 ) {
+        vec.xy = 0;
+    }
+
+    return vec;
 }
 
 /*
