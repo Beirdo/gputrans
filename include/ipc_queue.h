@@ -63,7 +63,6 @@ typedef struct {
 typedef struct {
     int             frameNum;
     int             indexIn;
-    int             indexInPrev;
 } RenderFrame_t;
 
 typedef union {

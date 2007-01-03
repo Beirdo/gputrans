@@ -75,7 +75,7 @@ pthread_t               mainThreadId;
 unsigned long           shmmax;
 
 void video_in_initialize( sharedMem_t *shared, char *filename );
-void videoFinished( int prevIndex, int currIndex );
+void videoFinished( int currIndex );
 void videoIn( int frameNum, int index );
 void videoOut( int frameNum, int index );
 
@@ -195,8 +195,7 @@ int main( int argc, char **argv )
             childNum = frameMsg->childNum;
             frameNum = frameMsg->renderFrame.frameNum;
             videoOut( frameNum, frameMsg->renderFrame.indexIn );
-            videoFinished( frameMsg->renderFrame.indexInPrev,
-                           frameMsg->renderFrame.indexIn );
+            videoFinished( frameMsg->renderFrame.indexIn );
 #if 0
             LogPrint( LOG_NOTICE, "Child %d is done frame %d", childNum, 
                                   frameNum );

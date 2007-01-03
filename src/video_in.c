@@ -75,7 +75,7 @@ static volatile int tailIn  = 0;
 extern unsigned long shmmax;
 extern bool         GlobalAbort;
 
-#define MIN_FRAMEBUFFER     20
+#define MIN_FRAMEBUFFER     10
 
 void *VideoInThread( void *arg );
 
@@ -321,7 +321,6 @@ void *VideoInThread( void *arg )
     int             frameCount;
     int             frameNum = 0;
     int             curr;
-    int             prev;
     bool            done = FALSE;
     ChildMsg_t     *msg;
 
@@ -353,7 +352,6 @@ void *VideoInThread( void *arg )
             msg->type = CHILD_RENDER_FRAME;
             msg->payload.renderFrame.frameNum    = -1;
             msg->payload.renderFrame.indexIn     = -1;
-            msg->payload.renderFrame.indexInPrev = -1;
             QueueEnqueueItem( ChildMsgQ, (QueueItem_t)msg );
             continue;
         }
@@ -361,21 +359,12 @@ void *VideoInThread( void *arg )
         frameNum++;
         curr = tailIn;
 
-        if( headIn == -1 ) {
-            /* This is the first frame, no previous frame */
-            headIn = tailIn;
-            prev = -1;
-        } else {
-            prev = (tailIn + frameCount - 1) % frameCount;
-        }
-
         msg = (ChildMsg_t *)malloc(sizeof(ChildMsg_t));
         msg->type = CHILD_RENDER_FRAME;
         msg->payload.renderFrame.frameNum    = frameNum;
         msg->payload.renderFrame.indexIn     = curr;
-        msg->payload.renderFrame.indexInPrev = prev;
 
-        used[curr] = 2;
+        used[curr] = 1;
 
 #if 0
         LogPrint( LOG_NOTICE, "enqueued frame #%d, head=%d, tail=%d",
@@ -392,17 +381,13 @@ void *VideoInThread( void *arg )
     return( NULL );
 }
 
-void videoFinished( int prevIndex, int currIndex )
+void videoFinished( int currIndex )
 {
     int         frameCount;
     int         i;
     int         j;
 
-    if( prevIndex != -1 ) {
-        used[prevIndex]--;
-    }
     used[currIndex]--;
-
 
     if( used[headIn] != 0 ) {
         return;

@@ -102,7 +102,7 @@ GLenum                  texFormatInout    = GL_RED; /*GL_LUMINANCE;*/
 GLenum                  texFormat         = GL_RGB;
 
 GLuint                  pingpongTexID[2];
-GLuint                  frameTexID, prevFrameTexID;
+GLuint                  frameTexID;
 GLuint                  yTexID, uTexID, vTexID;
 
 CGcontext               cgContext;
@@ -141,14 +141,11 @@ void do_child( int childNum )
     unsigned char  *frameInBase;
     unsigned char  *frameOutBase;
     unsigned char  *frameIn;
-    unsigned char  *frameInPrev;
     unsigned char  *frameOut;
     unsigned char  *yIn, *uIn, *vIn, *yOut, *uOut, *vOut;
     int             frameSize;
     int             frameNum;
     int             indexIn;
-    int             indexInPrev;
-    GLuint          tempTexID;
     int             oldCurr;
     int             i;
     cgProgram_t    *prog;
@@ -240,31 +237,9 @@ void do_child( int childNum )
         case CHILD_RENDER_FRAME:
             frameNum    = message->payload.renderFrame.frameNum;
             indexIn     = message->payload.renderFrame.indexIn;
-            indexInPrev = message->payload.renderFrame.indexInPrev;
 
             stride      = width * height;
             frameIn     = frameInBase  + (frameSize * indexIn);
-
-            if( oldCurr != -1 && indexInPrev == oldCurr ) {
-                /* No need to load previous frame, the GPU already has it */
-                tempTexID      = prevFrameTexID;
-                prevFrameTexID = frameTexID;
-                frameTexID     = tempTexID;
-            } else {
-                /* Setup the previous frame in the GPU */
-                if( indexInPrev != -1 ) {
-                    frameInPrev = frameInBase  + (frameSize * indexInPrev);
-                    /* Setup for the previous frame */
-                    yIn = frameInPrev;
-                } else {
-                    yIn = frameIn;
-                }
-
-                uIn = yIn + stride;
-                vIn = uIn + (stride / 4);
-
-                loadFrame( yIn, uIn, vIn, width, height, prevFrameTexID );
-            }
 
             /* Setup the current frame in the GPU */
             yIn = frameIn;
@@ -273,14 +248,10 @@ void do_child( int childNum )
             loadFrame( yIn, uIn, vIn, width, height, frameTexID );
 
 #if 0
-            LogPrint( LOG_NOTICE, "<%d> Received Frame #%d (index %d, prev %d)",
-                                  childNum, frameNum, indexIn, indexInPrev );
+            LogPrint( LOG_NOTICE, "<%d> Received Frame #%d (index %d)",
+                                  childNum, frameNum, indexIn );
 #endif
 
-            /* Store the current frame index to optimize loading previous
-             * frames later
-             */
-            oldCurr = indexIn;
 
             /* Pretend to have done some work */
 #if 0
@@ -309,7 +280,6 @@ void do_child( int childNum )
 
             frameMsg.renderFrame.frameNum = frameNum;
             frameMsg.renderFrame.indexIn = indexIn;
-            frameMsg.renderFrame.indexInPrev = indexInPrev;
             queueSendBinary( Q_MSG_FRAME_DONE, &frameMsg, sizeof( frameMsg ) );
             break;
         default:
@@ -618,7 +588,6 @@ void createTextures(int x, int y)
      */
     glGenTextures(2, pingpongTexID);
     glGenTextures(1, &frameTexID);
-    glGenTextures(1, &prevFrameTexID);
     glGenTextures(1, &yTexID);
     glGenTextures(1, &uTexID);
     glGenTextures(1, &vTexID);
@@ -627,7 +596,6 @@ void createTextures(int x, int y)
     setupTexture(pingpongTexID[readTex],  texIntFormat, texFormat, x, y);
     setupTexture(pingpongTexID[writeTex], texIntFormat, texFormat, x, y);
     setupTexture(frameTexID,              texIntFormat, texFormat, x, y);
-    setupTexture(prevFrameTexID,          texIntFormat, texFormat, x, y);
 
     /* The Y, U & V input textures */
     setupTexture(yTexID, texIntFormatInout, texFormatInout, x,     y);
