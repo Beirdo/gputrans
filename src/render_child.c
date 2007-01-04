@@ -58,12 +58,12 @@ extern void cg_init( cardInfo_t *cardInfo, int childNum );
 extern void cg_enable( int width, int height );
 extern void cg_destroy( void );
 extern void setupCardInfo( cardInfo_t *cardInfo, int childNum );
-extern void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y);
-extern void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y);
+extern void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData);
+extern void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData);
 extern void unloadRaw(uint8 *yData, uint8 *uData, uint8 *vData, 
-                      uint8 *yDataOut, uint8 *uDataOut, uint8 *vDataOut,
-                      int x, int y);
-extern void initFBO( int x, int y );
+                      uint8 *yDataOut, uint8 *uDataOut, uint8 *vDataOut);
+extern void denoiseFrame( void );
+extern void initFBO( void );
 extern void checkGLErrors( const char *label );
 extern void drawQuad( int wTex, int hTex, int wOut, int hOut );
 extern bool checkFramebufferStatus( int index );
@@ -178,7 +178,7 @@ void do_child( int childNum )
             yIn = frameIn;
             uIn = yIn + stride;
             vIn = uIn + (stride / 4);
-            loadFrame( yIn, uIn, vIn, width, height );
+            loadFrame( yIn, uIn, vIn );
 
 #if 0
             LogPrint( LOG_NOTICE, "<%d> Received Frame #%d (index %d)",
@@ -187,6 +187,7 @@ void do_child( int childNum )
 
 
             /* Pretend to have done some work */
+            denoiseFrame();
 #if 0
             usleep( 1000L );
 #endif
@@ -197,9 +198,9 @@ void do_child( int childNum )
             yOut = frameOut;
             uOut = yOut + stride;
             vOut = uOut + (stride / 4);
-            unloadFrame( yOut, uOut, vOut, width, height );
+            unloadFrame( yOut, uOut, vOut );
 #if 0
-            unloadRaw( yIn, uIn, vIn, yOut, uOut, vOut, width, height ); 
+            unloadRaw( yIn, uIn, vIn, yOut, uOut, vOut ); 
 #endif
 
             framesDone++;

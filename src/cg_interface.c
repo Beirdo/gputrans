@@ -50,26 +50,87 @@ static char ident[] _UNUSED_ =
     "$Id$";
 
 void setupCardInfo( cardInfo_t *cardInfo, int childNum );
-void initFBO( int x, int y );
+void initFBO( void );
 void checkGLErrors( const char *label );
 void drawQuad( int wTex, int hTex, int wOut, int hOut );
 bool checkFramebufferStatus( int index );
 void swap( void );
 void setupTexture(const GLuint texID, GLenum format, GLenum inFormat, int x, 
                   int y);
-void createTextures(int x, int y);
-void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y);
-void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y);
+void createTextures( void );
+void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData);
+void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData);
+void unloadRaw(uint8 *yData, uint8 *uData, uint8 *vData, 
+               uint8 *yDataOut, uint8 *uDataOut, uint8 *vDataOut);
 void attachPingPongFBOs( void );
 void detachFBOs( void );
 void handleCgError( CGcontext ctx, CGerror err, void *appdata );
 CGprogram loadCgProgram( char *name, char *file, char *entry, 
                          CGprofile profile );
-void unloadRaw(uint8 *yData, uint8 *uData, uint8 *vData, 
-               uint8 *yDataOut, uint8 *uDataOut, uint8 *vDataOut,
-               int x, int y);
+
+void copy_frame( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight, 
+                 int destWidth, int destHeight, int xOffset, int yOffset );
+void contrast_frame( void );
+void decimate_frame( GLuint destTex, GLuint srcTex, int srcWidth, 
+                     int srcHeight );
+void mark_low_contrast_blocks( void );
+void mb_search_44( void );
+void mb_search_22( void );
+void mb_search_11( void );
+void mb_search_00( void );
+void move_frame( void );
+void average_frame( void );
+void correct_frame2( void );
+void denoise_frame_pass2( void );
+void sharpen_frame( void );
+
+void diff_frame( GLuint destTex, GLuint srcATex, GLuint srcBTex, int srcWidth,
+                 int srcHeight );
+void thresh_diff( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight,
+                  int threshold );
+void vector_low_contrast( GLuint destTex, GLuint srcTex, int srcWidth, 
+                          int srcHeight, int threshold );
+void decimate_add( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight );
+void SAD( GLuint vectorTex, GLuint refTex, GLuint avgTex, int srcWidth,
+          int srcHeight, int xoffset, int yoffset, int factor );
+void SAD_pass2( GLuint vectorTex, GLuint refTex, GLuint avgTex, 
+                GLuint vectorInTex, int srcWidth, int srcHeight, int xoffset, 
+                int yoffset, int factor );
+void SAD_halfpel( GLuint vectorTex, GLuint refTex, GLuint avgTex, 
+                  GLuint vectorInTex, int srcWidth, int srcHeight, int xoffset, 
+                  int yoffset, int factor );
+void vector_update( void );
+void vector_badcheck( void );
+void vector_range( void );
+
+void denoiseFrame( void );
 
 static int              me;
+static bool             new_scene;
+static int              bad_vector;
+static int              width;
+static int              height;
+static int              vecWidth;
+static int              vecHeight;
+static int              padHeight;
+static int              sub2Height;
+static int              sub2Width;
+static int              sub4Height;
+static int              sub4Width;
+static int              frameNum;
+
+float                   luma_contrast = 100.0;
+float                   chroma_contrast = 100.0;
+int                     scene_thresh = 50;
+int                     contrast_thresh = 5;
+int                     block_contrast_thresh = 8;
+int                     radius = 8;
+int                     block_bad_thresh = 1024;
+int                     delay = 3;
+int                     correct_thresh = 5;
+int                     pp_thresh = 4;
+int                     sharpen = 125;
+
 GLuint                  glutWindowHandle;
 GLuint                  fb;
 
@@ -88,10 +149,15 @@ GLenum                  texFormat         = GL_RGB;
 GLuint                  pingpongTexID[2];
 GLuint                  frameTexID;
 GLuint                  yTexID, uTexID, vTexID;
+GLuint                  refTexID, avgTexID, avg2TexID, tmpTexID;
+GLuint                  sub2refTexID, sub2avgTexID, sub4refTexID, sub4avgTexID;
+GLuint                  diffTexID, vectorTexID, vector2TexID;
+GLuint                  vector3TexID;
 
 CGcontext               cgContext;
 CGprofile               fragmentProfile = CG_PROFILE_FP30;
 CGprofile               vertexProfile   = CG_PROFILE_VP30;
+
 CGprogram               frProgYUV420pIn, frProgY420pOut, frProgU420pOut;
 CGprogram               frProgV420pOut;
 CGprogram               frProgContrastFrame, frProgDiffFrame, frProgThreshDiff;
@@ -99,8 +165,9 @@ CGprogram               frProgDecimateAdd, frProgMoveFrame, frProgAverageFrame;
 CGprogram               frProgThresholdedDiff, frProgLowpassDiff;
 CGprogram               frProgCorrectFrame2, frProgDenoiseFramePass2;
 CGprogram               frProgSharpenFrame, frProgSAD, frProgSADHalfpel;
-CGprogram               frProgVectorInit, frProgVectorUpdate;
+CGprogram               frProgZero, frProgCopy, frProgVectorUpdate;
 CGprogram               frProgVectorBadcheck, frProgVectorRange;
+CGprogram               frProgVectorLowContrast, frProgSADPass2;
 
 CGprogram               vxProgDecimateBy2;
 
@@ -134,10 +201,13 @@ static cgProgram_t cgPrograms[] = {
     { &frProgSharpenFrame, "SharpenFrame", "yuvdenoise.cg", "sharpen_frame", FP30 },
     { &frProgSAD, "SAD", "yuvdenoise.cg", "SAD", FP30 },
     { &frProgSADHalfpel, "SADHalfpel", "yuvdenoise.cg", "SAD_halfpel", FP30 },
-    { &frProgVectorInit, "VectorInit", "yuvdenoise.cg", "vector_init", FP30 },
+    { &frProgZero, "Zero", "yuvdenoise.cg", "zero", FP30 },
+    { &frProgCopy, "Copy", "yuvdenoise.cg", "copy", FP30 },
     { &frProgVectorUpdate, "VectorUpdate", "yuvdenoise.cg", "vector_update", FP30 },
     { &frProgVectorBadcheck, "VectorBadcheck", "yuvdenoise.cg", "vector_badcheck", FP30 },
-    { &frProgVectorRange, "VectorRange", "yuvdenoise.cg", "vector_range", FP30 }
+    { &frProgVectorRange, "VectorRange", "yuvdenoise.cg", "vector_range", FP30 },
+    { &frProgVectorLowContrast, "VectorLowContrast", "yuvdenoise.cg", "vector_low_contrast", FP30 },
+    { &frProgSADPass2, "SADPass2", "yuvdenoise.cg", "SAD_pass2", FP30 }
 };
 static int cgProgramCount = NELEMENTS(cgPrograms);
 
@@ -160,21 +230,38 @@ void cg_init( cardInfo_t *cardInfo, int childNum )
     cgSetErrorHandler( handleCgError, NULL );
     LogPrint( LOG_NOTICE, "<%d> Using Cg version %s", childNum, 
                           cgGetString(CG_VERSION) );
+
+    new_scene = TRUE;
+    frameNum = 0;
 }
 
 
-void cg_enable( int width, int height ) 
+void cg_enable( int x, int y ) 
 {
     cgProgram_t    *prog;
     int             i;
+
+    width = x;
+    height = y;
+    padHeight = y + 64;
+
+    /* the vectorWidths are based on decimation, and at each level, an odd
+     * pixel will still decimate to a pixel (half-pixel rounded to full)
+     */
+    sub2Width  = (width + 1) /2;
+    sub2Height = (padHeight + 1) / 2;
+    sub4Width  = (sub2Width + 1) /2;
+    sub4Height = (sub2Height + 1) / 2;
+    vecWidth   = (sub4Width + 1) /2;
+    vecHeight  = (sub4Height + 1) / 2;
 
     glEnable( GL_FRAGMENT_PROGRAM_NV );
     checkGLErrors("glEnable1");
     glEnable( GL_TEXTURE_RECTANGLE_NV );
     checkGLErrors("glEnable2");
 
-    initFBO(width, height);
-    createTextures(width, height);
+    initFBO();
+    createTextures();
 
     for( i = 0; i < cgProgramCount; i++ ) {
         prog = &cgPrograms[i];
@@ -292,7 +379,7 @@ void setupCardInfo( cardInfo_t *cardInfo, int childNum )
     }
 }
 
-void initFBO( int x, int y )
+void initFBO( void )
 {
     /* Create the framebuffer object for off-screen rendering */
     glGenFramebuffersEXT(1, &fb);
@@ -302,11 +389,11 @@ void initFBO( int x, int y )
 
     glMatrixMode(GL_PROJECTION);
     glLoadIdentity();
-    gluOrtho2D(0, x, 0, y );
+    gluOrtho2D(0, width, 0, padHeight );
 
     glMatrixMode(GL_MODELVIEW);
     glLoadIdentity();
-    glViewport(0, 0, x, y );
+    glViewport(0, 0, width, padHeight );
 }
 
 void checkGLErrors( const char *label )
@@ -331,7 +418,7 @@ void handleCgError( CGcontext ctx, CGerror err, void *appdata )
     if( listing ) {
         LogPrint( LOG_NOTICE, "<%d> last listing: %s", me, listing );
     }
-    exit(-1);
+    exit(1);
 }
 
 /*
@@ -442,174 +529,57 @@ void setupTexture(const GLuint texID, GLenum format, GLenum inFormat, int x,
 /*
  * creates textures and populates the input texture
  */
-void createTextures(int x, int y)
+void createTextures( void )
 {
     /*
      * pingpong needs two textures, alternatingly read-only and
      * write-only, input is just read-only 
      */
-    glGenTextures(2, pingpongTexID);
     glGenTextures(1, &frameTexID);
     glGenTextures(1, &yTexID);
     glGenTextures(1, &uTexID);
     glGenTextures(1, &vTexID);
 
+    glGenTextures(1, &refTexID);
+    glGenTextures(1, &avgTexID);
+    glGenTextures(1, &avg2TexID);
+    glGenTextures(1, &tmpTexID);
+    glGenTextures(1, &sub2refTexID);
+    glGenTextures(1, &sub2avgTexID);
+    glGenTextures(1, &sub4refTexID);
+    glGenTextures(1, &sub4avgTexID);
+    glGenTextures(1, &diffTexID);
+    glGenTextures(1, &vectorTexID);
+    glGenTextures(1, &vector2TexID);
+    glGenTextures(1, &vector3TexID);
+
     /* set up textures */
-    setupTexture(pingpongTexID[readTex],  texIntFormat, texFormat, x, y);
-    setupTexture(pingpongTexID[writeTex], texIntFormat, texFormat, x, y);
-    setupTexture(frameTexID,              texIntFormat, texFormat, x, y);
+    setupTexture(frameTexID,   texIntFormat, texFormat, width, height);
+
+    setupTexture(refTexID,     texIntFormat, texFormat, width, padHeight);
+    setupTexture(avgTexID,     texIntFormat, texFormat, width, padHeight);
+    setupTexture(avg2TexID,    texIntFormat, texFormat, width, padHeight);
+    setupTexture(tmpTexID,     texIntFormat, texFormat, width, padHeight);
+    setupTexture(diffTexID,    texIntFormat, texFormat, width, padHeight);
+
+    setupTexture(sub2refTexID, texIntFormat, texFormat, sub2Width, sub2Height);
+    setupTexture(sub2avgTexID, texIntFormat, texFormat, sub2Width, sub2Height);
+
+    setupTexture(sub4refTexID, texIntFormat, texFormat, sub4Width, sub4Height);
+    setupTexture(sub4avgTexID, texIntFormat, texFormat, sub4Width, sub4Height);
+
+    setupTexture(vectorTexID,  texIntFormat, texFormat, vecWidth, vecHeight);
+    setupTexture(vector2TexID, texIntFormat, texFormat, vecWidth, vecHeight);
+    setupTexture(vector3TexID, texIntFormat, texFormat, vecWidth, vecHeight);
 
     /* The Y, U & V input textures */
-    setupTexture(yTexID, texIntFormatInout, texFormatInout, x,     y);
-    setupTexture(uTexID, texIntFormatInout, texFormatInout, x / 2, y / 2);
-    setupTexture(vTexID, texIntFormatInout, texFormatInout, x / 2, y / 2);
+    setupTexture(yTexID, texIntFormatInout, texFormatInout, width, height);
+    setupTexture(uTexID, texIntFormatInout, texFormatInout, width / 2, 
+                 height / 2);
+    setupTexture(vTexID, texIntFormatInout, texFormatInout, width / 2, 
+                 height / 2);
 }
 
-void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y)
-{
-    CGparameter yTexParam, uTexParam, vTexParam;
-
-    detachFBOs();
-
-    /* transfer data vector to input texture */
-    glBindTexture(texTarget, yTexID);
-    checkGLErrors("glBindTexture(Y)");
-    glTexSubImage2D(texTarget, 0, 0, 0, x, y, texFormatInout, GL_UNSIGNED_BYTE,
-                    yData);
-    checkGLErrors("glTexSubImage2D(Y)");
-
-    glBindTexture(texTarget, uTexID);
-    checkGLErrors("glBindTexture(U)");
-    glTexSubImage2D(texTarget, 0, 0, 0, x / 2, y / 2, texFormatInout, 
-                    GL_UNSIGNED_BYTE, uData);
-    checkGLErrors("glTexSubImage2D(U)");
-
-    glBindTexture(texTarget, vTexID);
-    checkGLErrors("glBindTexture(V)");
-    glTexSubImage2D(texTarget, 0, 0, 0, x / 2, y / 2, texFormatInout, 
-                    GL_UNSIGNED_BYTE, vData);
-    checkGLErrors("glTexSubImage2D(V)");
-
-    if( !cgIsProgramCompiled( frProgYUV420pIn ) ) {
-        cgCompileProgram( frProgYUV420pIn );
-    }
-
-    yTexParam = cgGetNamedParameter( frProgYUV420pIn, "Ytex" );
-    uTexParam = cgGetNamedParameter( frProgYUV420pIn, "Utex" );
-    vTexParam = cgGetNamedParameter( frProgYUV420pIn, "Vtex" );
-
-    cgGLSetTextureParameter( yTexParam, yTexID );
-    cgGLSetTextureParameter( uTexParam, uTexID );
-    cgGLSetTextureParameter( vTexParam, vTexID );
-
-    cgGLEnableTextureParameter( yTexParam );
-    cgGLEnableTextureParameter( uTexParam );
-    cgGLEnableTextureParameter( vTexParam );
-
-    cgGLLoadProgram( frProgYUV420pIn );
-    cgGLBindProgram( frProgYUV420pIn );
-
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
-                              texTarget, frameTexID, 0);
-    checkGLErrors("glFramebufferTexture2DEXT(in)");
-    checkFramebufferStatus(0);
-    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
-    checkGLErrors("glDrawBuffer(in)");
-    drawQuad( x, y, x, y );
-
-    detachFBOs();
-}
-
-
-void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData, int x, int y)
-{
-    CGparameter frameParam;
-
-    detachFBOs();
-
-    /* Since we want the output frame to be in YUV420P, we need to transfer
-     * each plane separately, which means unpacking the pixels.
-     */
-
-    /* Y Plane */
-    if( !cgIsProgramCompiled( frProgY420pOut ) ) {
-        cgCompileProgram( frProgY420pOut );
-    }
-
-    glBindTexture(texTarget, frameTexID);
-    checkGLErrors("glBindTexture(frameOut)");
-    frameParam = cgGetNamedParameter( frProgY420pOut, "frame" );
-    cgGLSetTextureParameter( frameParam, frameTexID );
-    cgGLEnableTextureParameter( frameParam );
-    cgGLLoadProgram( frProgY420pOut );
-    cgGLBindProgram( frProgY420pOut );
-
-    glBindTexture(texTarget, yTexID);
-    checkGLErrors("glBindTexture(yOut)");
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
-                              texTarget, yTexID, 0);
-    checkGLErrors("glFramebufferTexture2DEXT(yOut)");
-    checkFramebufferStatus(1);
-
-    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
-    checkGLErrors("glDrawBuffer(yOut)");
-    drawQuad( x, y, x, y );
-
-    checkFramebufferStatus(2);
-
-    glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
-    checkGLErrors("glReadBuffer(yOut)");
-    glReadPixels( 0, 0, x, y, texFormatInout, GL_UNSIGNED_BYTE, yData );
-    checkGLErrors("glReadPixels(yOut)");
-
-    /* U Plane */
-    if( !cgIsProgramCompiled( frProgU420pOut ) ) {
-        cgCompileProgram( frProgU420pOut );
-    }
-
-    frameParam = cgGetNamedParameter( frProgU420pOut, "frame" );
-    cgGLSetTextureParameter( frameParam, frameTexID );
-    cgGLEnableTextureParameter( frameParam );
-    cgGLLoadProgram( frProgU420pOut );
-    cgGLBindProgram( frProgU420pOut );
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
-                              texTarget, uTexID, 0);
-    checkGLErrors("glFramebufferTexture2DEXT(uOut)");
-    checkFramebufferStatus(3);
-
-    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
-    checkGLErrors("glDrawBuffer(uOut)");
-    drawQuad( x, y, x / 2, y / 2 );
-    glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
-    checkGLErrors("glReadBuffer(uOut)");
-    glReadPixels( 0, 0, x / 2, y / 2, texFormatInout, GL_UNSIGNED_BYTE, uData );
-    checkGLErrors("glReadPixels(uOut)");
-
-    /* V Plane */
-    if( !cgIsProgramCompiled( frProgV420pOut ) ) {
-        cgCompileProgram( frProgV420pOut );
-    }
-
-    frameParam = cgGetNamedParameter( frProgV420pOut, "frame" );
-    cgGLSetTextureParameter( frameParam, frameTexID );
-    cgGLEnableTextureParameter( frameParam );
-    cgGLLoadProgram( frProgV420pOut );
-    cgGLBindProgram( frProgV420pOut );
-    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
-                              texTarget, vTexID, 0);
-    checkGLErrors("glFrameBufferTexture2DEXT(vOut)");
-    checkFramebufferStatus(4);
-
-    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
-    checkGLErrors("glDrawBuffer(vOut)");
-    drawQuad( x, y, x / 2, y / 2 );
-    glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
-    checkGLErrors("glReadBuffer(vOut)");
-    glReadPixels( 0, 0, x / 2, y / 2, texFormatInout, GL_UNSIGNED_BYTE, vData );
-    checkGLErrors("glReadPixels(vOut)");
-
-    detachFBOs();
-}
 
 void detachFBOs( void )
 {
@@ -645,9 +615,157 @@ void attachPingPongFBOs( void )
     }
 }
 
+void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData)
+{
+    CGparameter yTexParam, uTexParam, vTexParam;
+
+    detachFBOs();
+
+    /* transfer data vector to input texture */
+    glBindTexture(texTarget, yTexID);
+    checkGLErrors("glBindTexture(Y)");
+    glTexSubImage2D(texTarget, 0, 0, 0, width, height, texFormatInout, 
+                    GL_UNSIGNED_BYTE, yData);
+    checkGLErrors("glTexSubImage2D(Y)");
+
+    glBindTexture(texTarget, uTexID);
+    checkGLErrors("glBindTexture(U)");
+    glTexSubImage2D(texTarget, 0, 0, 0, width / 2, height / 2, texFormatInout, 
+                    GL_UNSIGNED_BYTE, uData);
+    checkGLErrors("glTexSubImage2D(U)");
+
+    glBindTexture(texTarget, vTexID);
+    checkGLErrors("glBindTexture(V)");
+    glTexSubImage2D(texTarget, 0, 0, 0, width / 2, height / 2, texFormatInout, 
+                    GL_UNSIGNED_BYTE, vData);
+    checkGLErrors("glTexSubImage2D(V)");
+
+    if( !cgIsProgramCompiled( frProgYUV420pIn ) ) {
+        cgCompileProgram( frProgYUV420pIn );
+    }
+
+    yTexParam = cgGetNamedParameter( frProgYUV420pIn, "Ytex" );
+    uTexParam = cgGetNamedParameter( frProgYUV420pIn, "Utex" );
+    vTexParam = cgGetNamedParameter( frProgYUV420pIn, "Vtex" );
+
+    cgGLSetTextureParameter( yTexParam, yTexID );
+    cgGLSetTextureParameter( uTexParam, uTexID );
+    cgGLSetTextureParameter( vTexParam, vTexID );
+
+    cgGLEnableTextureParameter( yTexParam );
+    cgGLEnableTextureParameter( uTexParam );
+    cgGLEnableTextureParameter( vTexParam );
+
+    cgGLLoadProgram( frProgYUV420pIn );
+    cgGLBindProgram( frProgYUV420pIn );
+
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, frameTexID, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(in)");
+    checkFramebufferStatus(0);
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(in)");
+    drawQuad( width, height, width, height );
+
+    detachFBOs();
+}
+
+
+void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData)
+{
+    CGparameter frameParam;
+
+    detachFBOs();
+
+    /* Since we want the output frame to be in YUV420P, we need to transfer
+     * each plane separately, which means unpacking the pixels.
+     */
+
+    /* Y Plane */
+    if( !cgIsProgramCompiled( frProgY420pOut ) ) {
+        cgCompileProgram( frProgY420pOut );
+    }
+
+    glBindTexture(texTarget, frameTexID);
+    checkGLErrors("glBindTexture(frameOut)");
+    frameParam = cgGetNamedParameter( frProgY420pOut, "frame" );
+    cgGLSetTextureParameter( frameParam, frameTexID );
+    cgGLEnableTextureParameter( frameParam );
+    cgGLLoadProgram( frProgY420pOut );
+    cgGLBindProgram( frProgY420pOut );
+
+    glBindTexture(texTarget, yTexID);
+    checkGLErrors("glBindTexture(yOut)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, yTexID, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(yOut)");
+    checkFramebufferStatus(1);
+
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(yOut)");
+    drawQuad( width, height, width, height );
+
+    checkFramebufferStatus(2);
+
+    glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glReadBuffer(yOut)");
+    glReadPixels( 0, 0, width, height, texFormatInout, GL_UNSIGNED_BYTE, 
+                  yData );
+    checkGLErrors("glReadPixels(yOut)");
+
+    /* U Plane */
+    if( !cgIsProgramCompiled( frProgU420pOut ) ) {
+        cgCompileProgram( frProgU420pOut );
+    }
+
+    frameParam = cgGetNamedParameter( frProgU420pOut, "frame" );
+    cgGLSetTextureParameter( frameParam, frameTexID );
+    cgGLEnableTextureParameter( frameParam );
+    cgGLLoadProgram( frProgU420pOut );
+    cgGLBindProgram( frProgU420pOut );
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, uTexID, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(uOut)");
+    checkFramebufferStatus(3);
+
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(uOut)");
+    drawQuad( width, height, width / 2, height / 2 );
+    glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glReadBuffer(uOut)");
+    glReadPixels( 0, 0, width / 2, height / 2, texFormatInout, GL_UNSIGNED_BYTE,
+                  uData );
+    checkGLErrors("glReadPixels(uOut)");
+
+    /* V Plane */
+    if( !cgIsProgramCompiled( frProgV420pOut ) ) {
+        cgCompileProgram( frProgV420pOut );
+    }
+
+    frameParam = cgGetNamedParameter( frProgV420pOut, "frame" );
+    cgGLSetTextureParameter( frameParam, frameTexID );
+    cgGLEnableTextureParameter( frameParam );
+    cgGLLoadProgram( frProgV420pOut );
+    cgGLBindProgram( frProgV420pOut );
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, vTexID, 0);
+    checkGLErrors("glFrameBufferTexture2DEXT(vOut)");
+    checkFramebufferStatus(4);
+
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(vOut)");
+    drawQuad( width, height, width / 2, height / 2 );
+    glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glReadBuffer(vOut)");
+    glReadPixels( 0, 0, width / 2, height / 2, texFormatInout, GL_UNSIGNED_BYTE,
+                  vData );
+    checkGLErrors("glReadPixels(vOut)");
+
+    detachFBOs();
+}
+
 void unloadRaw(uint8 *yData, uint8 *uData, uint8 *vData, 
-               uint8 *yDataOut, uint8 *uDataOut, uint8 *vDataOut,
-               int x, int y)
+               uint8 *yDataOut, uint8 *uDataOut, uint8 *vDataOut)
 {
     float          *data;
     FILE           *fp;
@@ -655,7 +773,7 @@ void unloadRaw(uint8 *yData, uint8 *uData, uint8 *vData,
     int             size;
     int             index, index2, index3;
 
-    size = x * y;
+    size = width * height;
     data = (float *)malloc(sizeof(float) * size * 3);
 
     detachFBOs();
@@ -669,17 +787,17 @@ void unloadRaw(uint8 *yData, uint8 *uData, uint8 *vData,
 
     glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glReadBuffer(frameTexID)");
-    glReadPixels( 0, 0, x, y, GL_RGB, GL_FLOAT, data );
+    glReadPixels( 0, 0, width, height, GL_RGB, GL_FLOAT, data );
     checkGLErrors("glReadPixels(frameTexID)");
 
     detachFBOs();
 
     fp = fopen( "crap.out", "wt" );
 
-    for( i = 0; i < y; i++ ) {
-        for( j = 0; j < x; j++ ) {
-            index = j + (i*x);
-            index2 = (j / 2) + ((i /2) * (x / 2));
+    for( i = 0; i < height; i++ ) {
+        for( j = 0; j < width; j++ ) {
+            index = j + (i*width);
+            index2 = (j / 2) + ((i /2) * (width / 2));
             index3 = index * 3;
 
             fprintf(fp, "Pixel (%d,%d):  I:%d:%d:%d  F:%f:%f:%f  O:%d:%d:%d\n",
@@ -691,6 +809,1053 @@ void unloadRaw(uint8 *yData, uint8 *uData, uint8 *vData,
     }
 
     fclose(fp);
+}
+
+
+/*
+ * Denoise stuff
+ */
+
+void copy_frame( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight, 
+                 int destWidth, int destHeight, int xOffset, int yOffset )
+{
+    CGparameter frameParam;
+    CGparameter offsetParam;
+
+    if( srcTex == destTex ) {
+        return;
+    }
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgCopy ) ) {
+        cgCompileProgram( frProgCopy );
+    }
+
+    /* Setup the source texture */
+    glBindTexture(texTarget, srcTex);
+    checkGLErrors("glBindTexture(src)");
+
+    /* Setup the Cg parameters, bind the program */
+    frameParam = cgGetNamedParameter( frProgCopy, "frame" );
+    cgGLSetTextureParameter( frameParam, srcTex );
+    cgGLEnableTextureParameter( frameParam );
+    offsetParam = cgGetNamedParameter( frProgCopy, "offset" );
+    cgGLSetParameter2f( offsetParam, (float)xOffset, (float)yOffset );
+    cgGLLoadProgram( frProgCopy );
+    cgGLBindProgram( frProgCopy );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, destTex);
+    checkGLErrors("glBindTexture(dest)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, destTex, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(dest)");
+    checkFramebufferStatus(1);
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(dest)");
+    drawQuad( srcWidth, srcHeight, destWidth, destHeight );
+
+    checkFramebufferStatus(2);
+}
+
+void contrast_frame( void )
+{
+    CGparameter frameParam;
+    CGparameter contrastParam;
+
+    detachFBOs();
+
+    /* Takes input from ref, sends output to ref */
+    pingpongTexID[readTex] = refTexID;
+    pingpongTexID[writeTex] = tmpTexID;
+    attachPingPongFBOs();
+
+    if( !cgIsProgramCompiled( frProgContrastFrame ) ) {
+        cgCompileProgram( frProgContrastFrame );
+    }
+
+    /* Setup the Cg parameters, bind the program */
+    frameParam = cgGetNamedParameter( frProgContrastFrame, "frame" );
+    cgGLSetTextureParameter( frameParam, pingpongTexID[readTex] );
+    cgGLEnableTextureParameter( frameParam );
+
+    contrastParam = cgGetNamedParameter( frProgContrastFrame, "contrast" );
+    cgGLSetParameter2f( contrastParam, luma_contrast, chroma_contrast );
+
+    cgGLLoadProgram( frProgContrastFrame );
+    cgGLBindProgram( frProgContrastFrame );
+
+    /* Attach the output */
+    glDrawBuffer( attachmentpoints[writeTex] );
+    checkGLErrors("glDrawBuffer(write)");
+    drawQuad( width, padHeight, width, padHeight );
+
+    checkFramebufferStatus(2);
+
+    tmpTexID = pingpongTexID[readTex];
+    refTexID = pingpongTexID[writeTex];
+
+    detachFBOs();
+}
+
+void decimate_frame( GLuint destTex, GLuint srcTex, int srcWidth, 
+                     int srcHeight )
+{
+    copy_frame( destTex, srcTex, srcWidth, srcHeight, (srcWidth + 1) / 2,
+                (srcHeight + 1) / 2, 0, 0 );
+}
+
+void diff_frame( GLuint destTex, GLuint srcATex, GLuint srcBTex, int srcWidth,
+                 int srcHeight )
+{
+    CGparameter frameAParam;
+    CGparameter frameBParam;
+
+    if( srcATex == destTex || srcBTex == destTex ) {
+        return;
+    }
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgDiffFrame ) ) {
+        cgCompileProgram( frProgDiffFrame );
+    }
+
+    /* Setup the source textures */
+    glBindTexture(texTarget, srcATex);
+    checkGLErrors("glBindTexture(srcA)");
+    glBindTexture(texTarget, srcBTex);
+    checkGLErrors("glBindTexture(srcB)");
+
+    /* Setup the Cg parameters, bind the program */
+    frameAParam = cgGetNamedParameter( frProgDiffFrame, "frameA" );
+    frameBParam = cgGetNamedParameter( frProgDiffFrame, "frameB" );
+    cgGLSetTextureParameter( frameAParam, srcATex );
+    cgGLEnableTextureParameter( frameAParam );
+    cgGLSetTextureParameter( frameBParam, srcBTex );
+    cgGLEnableTextureParameter( frameBParam );
+    cgGLLoadProgram( frProgDiffFrame );
+    cgGLBindProgram( frProgDiffFrame );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, destTex);
+    checkGLErrors("glBindTexture(dest)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, destTex, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(dest)");
+    checkFramebufferStatus(1);
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(dest)");
+    drawQuad( srcWidth, srcHeight, srcWidth, srcHeight );
+
+    checkFramebufferStatus(2);
+}
+
+void thresh_diff( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight,
+                  int threshold )
+{
+    CGparameter frameParam;
+    CGparameter threshParam;
+
+    if( srcTex == destTex ) {
+        return;
+    }
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgThreshDiff ) ) {
+        cgCompileProgram( frProgThreshDiff );
+    }
+
+    /* Setup the source texture */
+    glBindTexture(texTarget, srcTex);
+    checkGLErrors("glBindTexture(src)");
+
+    /* Setup the Cg parameters, bind the program */
+    frameParam = cgGetNamedParameter( frProgThreshDiff, "frame" );
+    cgGLSetTextureParameter( frameParam, srcTex );
+    cgGLEnableTextureParameter( frameParam );
+    threshParam = cgGetNamedParameter( frProgThreshDiff, "threshold" );
+    cgGLSetParameter1f( threshParam, (float)threshold );
+    cgGLLoadProgram( frProgThreshDiff );
+    cgGLBindProgram( frProgThreshDiff );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, destTex);
+    checkGLErrors("glBindTexture(dest)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, destTex, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(dest)");
+    checkFramebufferStatus(1);
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(dest)");
+    drawQuad( srcWidth, srcHeight, srcWidth, srcHeight );
+
+    checkFramebufferStatus(2);
+}
+
+void decimate_add( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight )
+{
+    CGparameter frameParam;
+
+    if( srcTex == destTex ) {
+        return;
+    }
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgDecimateAdd ) ) {
+        cgCompileProgram( frProgDecimateAdd );
+    }
+
+    if( !cgIsProgramCompiled( vxProgDecimateBy2 ) ) {
+        cgCompileProgram( vxProgDecimateBy2 );
+    }
+
+    /* Setup the source texture */
+    glBindTexture(texTarget, srcTex);
+    checkGLErrors("glBindTexture(src)");
+
+    /* Setup the Cg parameters, bind the program */
+    frameParam = cgGetNamedParameter( frProgDecimateAdd, "frame" );
+    cgGLSetTextureParameter( frameParam, srcTex );
+    cgGLEnableTextureParameter( frameParam );
+    cgGLLoadProgram( frProgDecimateAdd );
+    cgGLBindProgram( frProgDecimateAdd );
+
+    /* Also setup the vertex program */
+    cgGLLoadProgram( vxProgDecimateBy2 );
+    cgGLEnableProfile( vertexProfile );
+    cgGLBindProgram( vxProgDecimateBy2 );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, destTex);
+    checkGLErrors("glBindTexture(dest)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, destTex, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(dest)");
+    checkFramebufferStatus(1);
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(dest)");
+    drawQuad( srcWidth, srcHeight, (srcWidth+1) / 2, (srcHeight+1) / 2 );
+
+    checkFramebufferStatus(2);
+
+    cgGLDisableProfile( vertexProfile );
+}
+
+void vector_low_contrast( GLuint destTex, GLuint srcTex, int srcWidth, 
+                          int srcHeight, int threshold )
+{
+    CGparameter frameParam;
+    CGparameter threshParam;
+
+    if( srcTex == destTex ) {
+        return;
+    }
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgVectorLowContrast ) ) {
+        cgCompileProgram( frProgVectorLowContrast );
+    }
+
+    /* Setup the source texture */
+    glBindTexture(texTarget, srcTex);
+    checkGLErrors("glBindTexture(src)");
+
+    /* Setup the Cg parameters, bind the program */
+    frameParam = cgGetNamedParameter( frProgVectorLowContrast, "frame" );
+    cgGLSetTextureParameter( frameParam, srcTex );
+    cgGLEnableTextureParameter( frameParam );
+    threshParam = cgGetNamedParameter( frProgVectorLowContrast, "threshold" );
+    cgGLSetParameter1f( threshParam, (float)threshold );
+    cgGLLoadProgram( frProgVectorLowContrast );
+    cgGLBindProgram( frProgVectorLowContrast );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, destTex);
+    checkGLErrors("glBindTexture(dest)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, destTex, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(dest)");
+    checkFramebufferStatus(1);
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(dest)");
+    drawQuad( srcWidth, srcHeight, srcWidth, srcHeight );
+
+    checkFramebufferStatus(2);
+}
+
+void mark_low_contrast_blocks( void )
+{
+    diff_frame( diffTexID, refTexID, avgTexID, width, padHeight );
+    thresh_diff( tmpTexID, diffTexID, width, padHeight, contrast_thresh );
+
+    decimate_add( diffTexID, tmpTexID, width, padHeight );
+    decimate_add( tmpTexID, diffTexID, sub2Width, sub2Height );
+    decimate_add( diffTexID, tmpTexID, sub4Width, sub4Height );
+
+    /* diffTexID now holds a /8 size frame of thresholded differences */
+    vector_low_contrast( vectorTexID, diffTexID, vecWidth, vecHeight, 
+                         block_contrast_thresh );
+
+    /* Now the vector texture will be initialized, with a SAD of 0 for the
+     * macroblocks that are low-contrast, and uninit for those which aren't
+     */
+}
+
+void SAD( GLuint vectorTex, GLuint refTex, GLuint avgTex, int srcWidth,
+          int srcHeight, int xoffset, int yoffset, int factor )
+{
+    CGparameter frameAParam;
+    CGparameter frameBParam;
+    CGparameter factorParam;
+    CGparameter offsetParam;
+
+    if( vectorTex == refTex || vectorTex == avgTex ) {
+        return;
+    }
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgSAD ) ) {
+        cgCompileProgram( frProgSAD );
+    }
+
+    /* Setup the source textures */
+    glBindTexture(texTarget, refTex);
+    checkGLErrors("glBindTexture(ref)");
+    glBindTexture(texTarget, avgTex);
+    checkGLErrors("glBindTexture(avg)");
+
+    /* Setup the Cg parameters, bind the program */
+    frameAParam = cgGetNamedParameter( frProgSAD, "frameA" );
+    cgGLSetTextureParameter( frameAParam, refTex );
+    cgGLEnableTextureParameter( frameAParam );
+
+    frameBParam = cgGetNamedParameter( frProgSAD, "frameB" );
+    cgGLSetTextureParameter( frameBParam, avgTex );
+    cgGLEnableTextureParameter( frameBParam );
+
+    factorParam = cgGetNamedParameter( frProgSAD, "factor" );
+    cgGLSetParameter1f( factorParam, (float)factor );
+
+    offsetParam = cgGetNamedParameter( frProgSAD, "offset" );
+    cgGLSetParameter2f( offsetParam, (float)xoffset, (float)yoffset );
+
+    cgGLLoadProgram( frProgSAD );
+    cgGLBindProgram( frProgSAD );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, vectorTex);
+    checkGLErrors("glBindTexture(vector)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, vectorTex, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(vector)");
+    checkFramebufferStatus(1);
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(vector)");
+    drawQuad( srcWidth, srcHeight, vecWidth, vecHeight );
+
+    checkFramebufferStatus(2);
+}
+
+void SAD_pass2( GLuint vectorTex, GLuint refTex, GLuint avgTex, 
+                GLuint vectorInTex, int srcWidth, int srcHeight, int xoffset, 
+                int yoffset, int factor )
+{
+    CGparameter frameAParam;
+    CGparameter frameBParam;
+    CGparameter vectorParam;
+    CGparameter factorParam;
+    CGparameter offsetParam;
+
+    if( vectorTex == refTex || vectorTex == avgTex || 
+        vectorTex == vectorInTex ) {
+        return;
+    }
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgSADPass2 ) ) {
+        cgCompileProgram( frProgSADPass2 );
+    }
+
+    /* Setup the source textures */
+    glBindTexture(texTarget, refTex);
+    checkGLErrors("glBindTexture(ref)");
+    glBindTexture(texTarget, avgTex);
+    checkGLErrors("glBindTexture(avg)");
+    glBindTexture(texTarget, vectorInTex);
+    checkGLErrors("glBindTexture(vectorIn)");
+
+    /* Setup the Cg parameters, bind the program */
+    frameAParam = cgGetNamedParameter( frProgSADPass2, "frameA" );
+    cgGLSetTextureParameter( frameAParam, refTex );
+    cgGLEnableTextureParameter( frameAParam );
+
+    frameBParam = cgGetNamedParameter( frProgSADPass2, "frameB" );
+    cgGLSetTextureParameter( frameBParam, avgTex );
+    cgGLEnableTextureParameter( frameBParam );
+
+    vectorParam = cgGetNamedParameter( frProgSADPass2, "vector" );
+    cgGLSetTextureParameter( vectorParam, vectorInTex );
+    cgGLEnableTextureParameter( vectorParam );
+
+    factorParam = cgGetNamedParameter( frProgSADPass2, "factor" );
+    cgGLSetParameter1f( factorParam, (float)factor );
+
+    offsetParam = cgGetNamedParameter( frProgSADPass2, "offset" );
+    cgGLSetParameter2f( offsetParam, (float)xoffset, (float)yoffset );
+
+    cgGLLoadProgram( frProgSADPass2 );
+    cgGLBindProgram( frProgSADPass2 );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, vectorTex);
+    checkGLErrors("glBindTexture(vector)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, vectorTex, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(vector)");
+    checkFramebufferStatus(1);
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(vector)");
+    drawQuad( srcWidth, srcHeight, vecWidth, vecHeight );
+
+    checkFramebufferStatus(2);
+}
+
+void SAD_halfpel( GLuint vectorTex, GLuint refTex, GLuint avgTex, 
+                  GLuint vectorInTex, int srcWidth, int srcHeight, int xoffset, 
+                  int yoffset, int factor )
+{
+    CGparameter frameAParam;
+    CGparameter frameBParam;
+    CGparameter vectorParam;
+    CGparameter factorParam;
+    CGparameter offsetParam;
+
+    if( vectorTex == refTex || vectorTex == avgTex || 
+        vectorTex == vectorInTex ) {
+        return;
+    }
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgSADHalfpel ) ) {
+        cgCompileProgram( frProgSADHalfpel );
+    }
+
+    /* Setup the source textures */
+    glBindTexture(texTarget, refTex);
+    checkGLErrors("glBindTexture(ref)");
+    glBindTexture(texTarget, avgTex);
+    checkGLErrors("glBindTexture(avg)");
+    glBindTexture(texTarget, vectorInTex);
+    checkGLErrors("glBindTexture(vectorIn)");
+
+    /* Setup the Cg parameters, bind the program */
+    frameAParam = cgGetNamedParameter( frProgSADHalfpel, "frameA" );
+    cgGLSetTextureParameter( frameAParam, refTex );
+    cgGLEnableTextureParameter( frameAParam );
+
+    frameBParam = cgGetNamedParameter( frProgSADHalfpel, "frameB" );
+    cgGLSetTextureParameter( frameBParam, avgTex );
+    cgGLEnableTextureParameter( frameBParam );
+
+    vectorParam = cgGetNamedParameter( frProgSADHalfpel, "vector" );
+    cgGLSetTextureParameter( vectorParam, vectorInTex );
+    cgGLEnableTextureParameter( vectorParam );
+
+    factorParam = cgGetNamedParameter( frProgSADHalfpel, "factor" );
+    cgGLSetParameter1f( factorParam, (float)factor );
+
+    offsetParam = cgGetNamedParameter( frProgSADHalfpel, "offset" );
+    cgGLSetParameter2f( offsetParam, (float)xoffset, (float)yoffset );
+
+    cgGLLoadProgram( frProgSADHalfpel );
+    cgGLBindProgram( frProgSADHalfpel );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, vectorTex);
+    checkGLErrors("glBindTexture(vector)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, vectorTex, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(vector)");
+    checkFramebufferStatus(1);
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(vector)");
+    drawQuad( srcWidth, srcHeight, vecWidth, vecHeight );
+
+    checkFramebufferStatus(2);
+}
+
+
+void vector_update( void )
+{
+    CGparameter oldParam;
+    CGparameter newParam;
+
+    /* Inputs are vectorTexID, vector2TexID
+     * Output is vectorTexID (by swapping IDs with vector3TexID)
+     */
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgVectorUpdate ) ) {
+        cgCompileProgram( frProgVectorUpdate );
+    }
+
+    pingpongTexID[readTex] = vectorTexID;
+    pingpongTexID[writeTex] = vector3TexID;
+    attachPingPongFBOs();
+
+    /* Setup the source textures */
+    glBindTexture(texTarget, vector2TexID);
+    checkGLErrors("glBindTexture(vector2)");
+
+    /* Setup the Cg parameters, bind the program */
+    oldParam = cgGetNamedParameter( frProgVectorUpdate, "oldvector" );
+    cgGLSetTextureParameter( oldParam, pingpongTexID[readTex] );
+    cgGLEnableTextureParameter( oldParam );
+
+    newParam = cgGetNamedParameter( frProgVectorUpdate, "newvector" );
+    cgGLSetTextureParameter( newParam, vector2TexID );
+    cgGLEnableTextureParameter( newParam );
+
+    cgGLLoadProgram( frProgVectorUpdate );
+    cgGLBindProgram( frProgVectorUpdate );
+
+    /* Attach the output */
+    glDrawBuffer( attachmentpoints[writeTex] );
+    checkGLErrors("glDrawBuffer(write)");
+    drawQuad( vecWidth, vecHeight, vecWidth, vecHeight );
+
+    checkFramebufferStatus(2);
+
+    vector3TexID = pingpongTexID[readTex];
+    vectorTexID = pingpongTexID[writeTex];
+
+    detachFBOs();
+}
+
+void vector_badcheck( void )
+{
+    CGparameter     vectorParam;
+    CGparameter     threshParam;
+    int             x;
+    int             y;
+    int             xx;
+    int             yy;
+    unsigned int    bad_count;
+
+    x = vecWidth;
+    y = vecHeight;
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgVectorBadcheck ) ) {
+        cgCompileProgram( frProgVectorBadcheck );
+    }
+
+    /* Setup the source textures */
+    glBindTexture(texTarget, vectorTexID);
+    checkGLErrors("glBindTexture(vector)");
+
+    /* Setup the Cg parameters, bind the program */
+    vectorParam = cgGetNamedParameter( frProgVectorBadcheck, "vector" );
+    cgGLSetTextureParameter( vectorParam, vectorTexID );
+    cgGLEnableTextureParameter( vectorParam );
+
+    threshParam = cgGetNamedParameter( frProgVectorBadcheck, "block_thresh" );
+    cgGLSetParameter1f( threshParam, (float)block_bad_thresh );
+
+    cgGLLoadProgram( frProgVectorBadcheck );
+    cgGLBindProgram( frProgVectorBadcheck );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, vector2TexID);
+    checkGLErrors("glBindTexture(vector2)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, vector2TexID, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(vector2)");
+    checkFramebufferStatus(1);
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(vector2)");
+    drawQuad( x, y, x, y );
+
+    checkFramebufferStatus(2);
+
+    pingpongTexID[readTex] = vector2TexID;
+    pingpongTexID[writeTex] = vector3TexID;
+
+    /* Decimate the bad_vector data down to a single number */
+    while( x > 1 && y > 1 ) {
+        xx = (x + 1) / 2;
+        yy = (y + 1) / 2;
+
+        decimate_add( pingpongTexID[writeTex], pingpongTexID[readTex], x, y );
+        swap();
+        x = xx;
+        y = yy;
+    }
+
+    /* now read back that one value
+     */
+    detachFBOs();
+    swap();
+    attachPingPongFBOs();
+    glReadBuffer( attachmentpoints[writeTex] );
+    checkGLErrors("glReadBuffer(bad_vec)");
+    glReadPixels( 0, 0, 1, 1, texFormatInout, GL_UNSIGNED_INT, &bad_count );
+    checkGLErrors("glReadPixels(bad_vec)");
+
+    bad_vector += bad_count;
+
+    detachFBOs();
+}
+
+void vector_range( void )
+{
+    CGparameter     frameParam;
+    CGparameter     resParam;
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgVectorRange ) ) {
+        cgCompileProgram( frProgVectorRange );
+    }
+
+    /* Setup the source textures */
+    pingpongTexID[readTex] = vectorTexID;
+    pingpongTexID[writeTex] = vector3TexID;
+    attachPingPongFBOs();
+
+    /* Setup the Cg parameters, bind the program */
+    frameParam = cgGetNamedParameter( frProgVectorRange, "vector" );
+    cgGLSetTextureParameter( frameParam, pingpongTexID[readTex] );
+    cgGLEnableTextureParameter( frameParam );
+
+    resParam = cgGetNamedParameter( frProgVectorRange, "resolution" );
+    cgGLSetParameter2f( resParam, (float)width, (float)height );
+
+    cgGLLoadProgram( frProgVectorRange );
+    cgGLBindProgram( frProgVectorRange );
+
+    /* Attach the output */
+    glDrawBuffer( attachmentpoints[writeTex] );
+    checkGLErrors("glDrawBuffer(write)");
+    drawQuad( vecWidth, vecHeight, vecWidth, vecHeight );
+
+    checkFramebufferStatus(2);
+
+    vector3TexID = pingpongTexID[readTex];
+    vectorTexID = pingpongTexID[writeTex];
+
+    detachFBOs();
+}
+
+void mb_search_44( void )
+{
+    int         xx;
+    int         yy;
+
+    for( yy = -radius; yy <= radius; yy++ ) {
+        for( xx = -radius; xx <= radius; xx++ ) {
+            SAD( vector2TexID, sub4refTexID, sub4avgTexID, sub4Width, 
+                 sub4Height, xx, yy, 2 );
+            vector_update();
+        }
+    }
+}
+
+void mb_search_22( void )
+{
+    int         xx;
+    int         yy;
+
+    for( yy = -2; yy <= 2; yy++ ) {
+        for( xx = -2; xx <= 2; xx++ ) {
+            SAD_pass2( vector2TexID, sub2refTexID, sub2avgTexID, vectorTexID,
+                       sub2Width, sub2Height, xx, yy, 4 );
+            vector_update();
+        }
+    }
+}
+
+void mb_search_11( void )
+{
+    int         xx;
+    int         yy;
+
+    for( yy = -2; yy <= 2; yy++ ) {
+        for( xx = -2; xx <= 2; xx++ ) {
+            SAD_pass2( vector2TexID, refTexID, avgTexID, vectorTexID,
+                       width, padHeight, xx, yy, 8 );
+            vector_update();
+        }
+    }
+
+    /* Idiot-check against no motion */
+    SAD( vector2TexID, refTexID, avgTexID, width, padHeight, 0, 0, 8 );
+    vector_update();
+}
+
+void mb_search_00( void )
+{
+    int         xx;
+    int         yy;
+
+    for( yy = -1; yy <= 1; yy++ ) {
+        for( xx = -1; xx <= 1; xx++ ) {
+            SAD_halfpel( vector2TexID, refTexID, avgTexID, vectorTexID,
+                         width, padHeight, xx, yy, 8 );
+            vector_update();
+        }
+    }
+
+    vector_badcheck();
+    vector_range();
+}
+
+void move_frame( void )
+{
+    CGparameter frameParam;
+    CGparameter vectorParam;
+    GLuint      tmp;
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgMoveFrame ) ) {
+        cgCompileProgram( frProgMoveFrame );
+    }
+
+    /* Setup the source textures */
+    glBindTexture(texTarget, avgTexID);
+    checkGLErrors("glBindTexture(avg)");
+    glBindTexture(texTarget, vectorTexID);
+    checkGLErrors("glBindTexture(vector)");
+
+    /* Setup the Cg parameters, bind the program */
+    frameParam = cgGetNamedParameter( frProgMoveFrame, "frame" );
+    cgGLSetTextureParameter( frameParam, avgTexID );
+    cgGLEnableTextureParameter( frameParam );
+
+    vectorParam = cgGetNamedParameter( frProgMoveFrame, "vector" );
+    cgGLSetTextureParameter( vectorParam, vectorTexID );
+    cgGLEnableTextureParameter( vectorParam );
+
+    cgGLLoadProgram( frProgMoveFrame );
+    cgGLBindProgram( frProgMoveFrame );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, tmpTexID);
+    checkGLErrors("glBindTexture(tmp)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, tmpTexID, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(tmp)");
+    checkFramebufferStatus(1);
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(tmp)");
+    drawQuad( width, padHeight, width, padHeight );
+
+    checkFramebufferStatus(2);
+
+    /* present the output on avgTexID */
+    tmp = tmpTexID;
+    tmpTexID = avgTexID;
+    avgTexID = tmp;
+}
+
+void average_frame( void )
+{
+    CGparameter frameParam;
+    CGparameter avgParam;
+    CGparameter delayParam;
+    GLuint      tmp;
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgAverageFrame ) ) {
+        cgCompileProgram( frProgAverageFrame );
+    }
+
+    /* Setup the source textures */
+    glBindTexture(texTarget, refTexID);
+    checkGLErrors("glBindTexture(ref)");
+    glBindTexture(texTarget, avgTexID);
+    checkGLErrors("glBindTexture(avg)");
+
+    /* Setup the Cg parameters, bind the program */
+    frameParam = cgGetNamedParameter( frProgAverageFrame, "frame" );
+    cgGLSetTextureParameter( frameParam, refTexID );
+    cgGLEnableTextureParameter( frameParam );
+
+    avgParam = cgGetNamedParameter( frProgAverageFrame, "avg" );
+    cgGLSetTextureParameter( avgParam, avgTexID );
+    cgGLEnableTextureParameter( avgParam );
+
+    delayParam = cgGetNamedParameter( frProgAverageFrame, "delay" );
+    cgGLSetParameter1f( delayParam, (float)delay );
+
+    cgGLLoadProgram( frProgAverageFrame );
+    cgGLBindProgram( frProgAverageFrame );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, tmpTexID);
+    checkGLErrors("glBindTexture(tmp)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, tmpTexID, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(tmp)");
+    checkFramebufferStatus(1);
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(tmp)");
+    drawQuad( width, padHeight, width, padHeight );
+
+    checkFramebufferStatus(2);
+
+    /* present the output on avgTexID */
+    tmp = tmpTexID;
+    tmpTexID = avgTexID;
+    avgTexID = tmp;
+}
+
+void correct_frame2( void )
+{
+    CGparameter frameAParam;
+    CGparameter frameBParam;
+    CGparameter threshParam;
+    GLuint      tmp;
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgCorrectFrame2 ) ) {
+        cgCompileProgram( frProgCorrectFrame2 );
+    }
+
+    /* Setup the source textures */
+    glBindTexture(texTarget, refTexID);
+    checkGLErrors("glBindTexture(ref)");
+    glBindTexture(texTarget, avgTexID);
+    checkGLErrors("glBindTexture(avg)");
+
+    /* Setup the Cg parameters, bind the program */
+    frameAParam = cgGetNamedParameter( frProgCorrectFrame2, "frameA" );
+    cgGLSetTextureParameter( frameAParam, refTexID );
+    cgGLEnableTextureParameter( frameAParam );
+
+    frameBParam = cgGetNamedParameter( frProgCorrectFrame2, "frameB" );
+    cgGLSetTextureParameter( frameBParam, avgTexID );
+    cgGLEnableTextureParameter( frameBParam );
+
+    threshParam = cgGetNamedParameter( frProgCorrectFrame2, "threshold" );
+    cgGLSetParameter1f( threshParam, (float)correct_thresh );
+
+    cgGLLoadProgram( frProgCorrectFrame2 );
+    cgGLBindProgram( frProgCorrectFrame2 );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, tmpTexID);
+    checkGLErrors("glBindTexture(tmp)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, tmpTexID, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(tmp)");
+    checkFramebufferStatus(1);
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(tmp)");
+    drawQuad( width, padHeight, width, padHeight );
+
+    checkFramebufferStatus(2);
+
+    /* present the output on avgTexID */
+    tmp = tmpTexID;
+    tmpTexID = avgTexID;
+    avgTexID = tmp;
+}
+
+void denoise_frame_pass2( void )
+{
+    CGparameter frameAParam;
+    CGparameter frameBParam;
+    CGparameter threshParam;
+    GLuint      tmp;
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgDenoiseFramePass2 ) ) {
+        cgCompileProgram( frProgDenoiseFramePass2 );
+    }
+
+    /* Setup the source textures */
+    glBindTexture(texTarget, avgTexID);
+    checkGLErrors("glBindTexture(avg)");
+    glBindTexture(texTarget, avg2TexID);
+    checkGLErrors("glBindTexture(avg2)");
+
+    /* Setup the Cg parameters, bind the program */
+    frameAParam = cgGetNamedParameter( frProgDenoiseFramePass2, "frameA" );
+    cgGLSetTextureParameter( frameAParam, avgTexID );
+    cgGLEnableTextureParameter( frameAParam );
+
+    frameBParam = cgGetNamedParameter( frProgDenoiseFramePass2, "frameB" );
+    cgGLSetTextureParameter( frameBParam, avg2TexID );
+    cgGLEnableTextureParameter( frameBParam );
+
+    threshParam = cgGetNamedParameter( frProgDenoiseFramePass2, 
+                                       "pp_threshold" );
+    cgGLSetParameter1f( threshParam, (float)pp_thresh );
+
+    cgGLLoadProgram( frProgDenoiseFramePass2 );
+    cgGLBindProgram( frProgDenoiseFramePass2 );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, tmpTexID);
+    checkGLErrors("glBindTexture(tmp)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, tmpTexID, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(tmp)");
+    checkFramebufferStatus(1);
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(tmp)");
+    drawQuad( width, padHeight, width, padHeight );
+
+    checkFramebufferStatus(2);
+
+    /* present the output on avg2TexID */
+    tmp = tmpTexID;
+    tmpTexID = avg2TexID;
+    avg2TexID = tmp;
+}
+
+void sharpen_frame( void )
+{
+    CGparameter frameParam;
+    CGparameter sharpenParam;
+    GLuint      tmp;
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgSharpenFrame ) ) {
+        cgCompileProgram( frProgSharpenFrame );
+    }
+
+    /* Setup the source textures */
+    glBindTexture(texTarget, avg2TexID);
+    checkGLErrors("glBindTexture(avg2)");
+
+    /* Setup the Cg parameters, bind the program */
+    frameParam = cgGetNamedParameter( frProgSharpenFrame, "frame" );
+    cgGLSetTextureParameter( frameParam, avg2TexID );
+    cgGLEnableTextureParameter( frameParam );
+
+    sharpenParam = cgGetNamedParameter( frProgSharpenFrame, "sharpen" );
+    cgGLSetParameter1f( sharpenParam, (float)sharpen );
+
+    cgGLLoadProgram( frProgSharpenFrame );
+    cgGLBindProgram( frProgSharpenFrame );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, tmpTexID);
+    checkGLErrors("glBindTexture(tmp)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, tmpTexID, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(tmp)");
+    checkFramebufferStatus(1);
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(tmp)");
+    drawQuad( width, padHeight, width, padHeight );
+
+    checkFramebufferStatus(2);
+
+    /* present the output on avg2TexID */
+    tmp = tmpTexID;
+    tmpTexID = avg2TexID;
+    avg2TexID = tmp;
+}
+
+
+void denoiseFrame( void )
+{
+    bad_vector = 0;
+    frameNum++;
+
+    /* Copy input frame to ref */
+    copy_frame(refTexID, frameTexID, width, height, width, padHeight, 0, 32);
+
+    if( new_scene ) {
+        new_scene = FALSE;
+
+        LogPrint( LOG_NOTICE, "New Scene detected, frame %d", frameNum );
+
+        /* Copy input frame to avg */
+        copy_frame(avgTexID, frameTexID, width, height, width, padHeight, 0,
+                   32);
+
+        /* Copy input frame to avg2 */
+        copy_frame(avg2TexID, frameTexID, width, height, width, padHeight, 0,
+                   32);
+    }
+
+    contrast_frame();
+    decimate_frame(sub2refTexID, refTexID, width, padHeight);
+    decimate_frame(sub2avgTexID, avgTexID, width, padHeight);
+    decimate_frame(sub4refTexID, sub2refTexID, sub2Width, sub2Height);
+    decimate_frame(sub4avgTexID, sub2avgTexID, sub2Width, sub2Height);
+
+    mark_low_contrast_blocks();
+    mb_search_44();
+    mb_search_22();
+    mb_search_11();
+    mb_search_00();
+    move_frame();
+
+    if( ( width * height * scene_thresh / 6400 ) < bad_vector ) {
+        /* Scene change */
+        new_scene = TRUE;
+    }
+
+    bad_vector = 0;
+    
+    average_frame();
+    correct_frame2();
+    denoise_frame_pass2();
+    sharpen_frame();
+
+    /* Copy the output back to be read */
+    copy_frame(frameTexID, tmpTexID, width, padHeight, height, width, 0, -32);
+
+    /* Just to be sure */
+    detachFBOs();
 }
 
 /*

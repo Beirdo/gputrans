@@ -27,8 +27,7 @@
 
 float3 contrast_frame( float2  coord               : TEXCOORD0,
                        uniform samplerRECT frame   : TEXUNIT0,
-                       uniform float   luma_contrast,
-                       uniform float   chroma_contrast) : COLOR
+                       uniform float2  contrast) : COLOR
 {
     string id = "$Id$";
 
@@ -36,8 +35,8 @@ float3 contrast_frame( float2  coord               : TEXCOORD0,
 
     value = texRECT( frame, coord ).xyz;
     value -= 0.5;
-    value.x = value.x * luma_contrast;
-    value.yz = value.yz * chroma_contrast;
+    value.x = value.x * contrast.x;
+    value.yz = value.yz * contrast.y;
     value += 0.5;
     value.x = clamp( value.x, 0.062745098, 0.921568627 );
     value.yz = clamp( value.yz, 0.062745098, 0.937254902 );
@@ -265,51 +264,100 @@ float3 sharpen_frame( float2 coord                : TEXCOORD0,
     return output;
 }
 
-float SAD( float2 coord                 : TEXCOORD0,
-           uniform samplerRECT frameA   : TEXUNIT0,
-           uniform samplerRECT frameB   : TEXUNIT1,
-           uniform float  factor,
-           uniform float2 offset ) : COLOR
+float4 SAD( float2 coord                 : TEXCOORD0,
+            uniform samplerRECT frameA   : TEXUNIT0,
+            uniform samplerRECT frameB   : TEXUNIT1,
+            uniform float  factor,
+            uniform float2 offset ) : COLOR
 {
     string id = "$Id$";
 
     float sad;
     float3 diff;
+    float4 newvec;
 
     sad = 0.0;
     coord = ((coord - 0.5) * factor) + 0.5;
     diff = abs( texRECT( frameA, coord ).xyz - 
                 texRECT( frameB, coord + offset ).xyz );
     sad += diff.x + diff.y + diff.z;
+    sad += (offset.x * offset.x);
+    sad += (offset.y * offset.y);
     
-    return sad;
+    newvec.xy = offset;
+    newvec.z = sad;
+    newvec.w = 1.0;
+
+    return newvec;
 }
 
-
-float SAD_halfpel( float2 coord                 : TEXCOORD0,
-                   uniform samplerRECT frameA   : TEXUNIT0,
-                   uniform samplerRECT frameB   : TEXUNIT1,
-                   uniform samplerRECT frameC   : TEXUNIT2,
-                   uniform float  factor,
-                   uniform float2 offsetA,
-                   uniform float2 offsetB ) : COLOR
+float4 SAD_pass2( float2 coord                 : TEXCOORD0,
+                  uniform samplerRECT frameA   : TEXUNIT0,
+                  uniform samplerRECT frameB   : TEXUNIT1,
+                  uniform samplerRECT vector   : TEXUNIT2,
+                  uniform float  factor,
+                  uniform float2 offset ) : COLOR
 {
     string id = "$Id$";
 
     float sad;
     float3 diff;
+    float4 newvec;
+    float2 newoffset;
 
+    /* Pre un-decimation coordinates for the vector */
+    newoffset = texRECT( vector, coord ).xy;
+    newoffset *= 2.0;
+    newoffset += offset;
+
+    /* Account for the decimation of the vector to read out of the frame */
     sad = 0.0;
     coord = ((coord - 0.5) * factor) + 0.5;
-    diff = abs( ((texRECT( frameA, coord + offsetA ).xyz + 
-                  texRECT( frameB, coord + offsetB ).xyz ) / 2.0 ) - 
-                texRECT( frameC, coord ).xyz );
+    diff = abs( texRECT( frameA, coord ).xyz - 
+                texRECT( frameB, coord + newoffset ).xyz );
     sad += diff.x + diff.y + diff.z;
     
-    return sad;
+    newvec.xy = newoffset;
+    newvec.z = sad;
+    newvec.w = 1.0;
+
+    return newvec;
 }
 
-float4 vector_init( float2 coord                : TEXCOORD0 ) : COLOR
+
+float4 SAD_halfpel( float2 coord                 : TEXCOORD0,
+                    uniform samplerRECT frameA   : TEXUNIT0,
+                    uniform samplerRECT frameB   : TEXUNIT1,
+                    uniform samplerRECT vector   : TEXUNIT2,
+                    uniform float  factor,
+                    uniform float2 offset ) : COLOR
+{
+    string id = "$Id$";
+
+    float sad;
+    float3 diff;
+    float4 newvec;
+    float2 newoffset;
+
+    /* pre-un-decimation coordinates for the vector */
+    newoffset = texRECT( vector, coord ).xy;
+
+    /* Account for the decimation of the vector to read from the frame */
+    sad = 0.0;
+    coord = ((coord - 0.5) * factor) + 0.5;
+    diff = abs( ((texRECT( frameA, coord + newoffset ).xyz + 
+                  texRECT( frameA, coord + newoffset + offset ).xyz ) / 2.0 ) - 
+                texRECT( frameB, coord ).xyz );
+    sad += diff.x + diff.y + diff.z;
+    
+    newvec.xy = offset + (2 * newoffset);
+    newvec.z  = sad;
+    newvec.w  = 1.0;
+
+    return newvec;
+}
+
+float4 zero( float2 coord                : TEXCOORD0 ) : COLOR
 {
     string id = "$Id$";
 
@@ -319,32 +367,43 @@ float4 vector_init( float2 coord                : TEXCOORD0 ) : COLOR
     return zeros;
 }
 
+float4 copy( float2 coord               : TEXCOORD0,
+             uniform samplerRECT frame  : TEXUNIT0,
+             uniform float2 offset ) : COLOR
+{
+    string id = "$Id$";
+
+    float4 value;
+
+    /* - offset so the a positive offset means to "move down" or "move right"
+     * as that's intuitive to the user
+     */
+    value = texRECT(frame, coord - offset);
+    return value;
+}
+
 float4 vector_update( float2 coord                  : TEXCOORD0,
                       uniform samplerRECT oldvector : TEXUNIT0,
-                      uniform samplerRECT sadvector : TEXUNIT1,
-                      uniform float x,
-                      uniform float y ) : COLOR
+                      uniform samplerRECT newvector : TEXUNIT1 ) : COLOR
 {
     string id = "$Id$";
 
     float4 outvec;
     float4 oldvec;
-    float sad;
+    float4 newvec;
 
     oldvec = texRECT( oldvector, coord );
-    sad = texRECT( sadvector, coord ).x;
+    newvec = texRECT( newvector, coord );
 
-    if( oldvec.w == 0.0 || sad <= oldvec.z ) {
-        outvec.x = x;
-        outvec.y = y;
-        outvec.z = sad;
-        outvec.w = 1.0;
+    if( oldvec.w == 0.0 || newvec.z <= oldvec.z ) {
+        outvec = newvec;
     } else {
         outvec = oldvec;
     }
 
     return outvec;
 }
+
 
 float vector_badcheck( float2 coord                 : TEXCOORD0,
                        uniform samplerRECT vector   : TEXUNIT0,
@@ -372,7 +431,7 @@ float4 vector_range( float2 coord                   : TEXCOORD0,
     float2 veccoord;
 
     vec = texRECT( vector, coord );
-    veccoord.xy = vec.xy + coord - 0.5;
+    veccoord.xy = vec.xy + (coord - 0.5) * 8.0;
     if( veccoord.x < 0 || veccoord.x > resolution.x ||
         veccoord.y < 32 || veccoord.y > resolution.y + 32 ) {
         vec.xy = 0;
@@ -380,6 +439,28 @@ float4 vector_range( float2 coord                   : TEXCOORD0,
 
     return vec;
 }
+
+float4 vector_low_contrast( float2 coord              : TEXCOORD0,
+                            uniform samplerRECT frame : TEXUNIT0,
+                            uniform float threshold ) : COLOR
+{
+    string id = "$Id$";
+
+    float  value;
+    float4 outvec;
+
+    value = texRECT( frame, coord ).x;
+
+    outvec.xyzw = 0.0;
+
+    if( value > threshold ) {
+        /* With a SAD of 0.0, we shouldn't end up overriding this */
+        outvec.w = 1.0;
+    }
+
+    return outvec;
+}
+
 
 /*
  * vim:ts=4:sw=4:ai:et:si:sts=4
