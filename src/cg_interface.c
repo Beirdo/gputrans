@@ -87,9 +87,9 @@ void sharpen_frame( void );
 void diff_frame( GLuint destTex, GLuint srcATex, GLuint srcBTex, int srcWidth,
                  int srcHeight );
 void thresh_diff( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight,
-                  int threshold );
+                  float threshold );
 void vector_low_contrast( GLuint destTex, GLuint srcTex, int srcWidth, 
-                          int srcHeight, int threshold );
+                          int srcHeight, float threshold );
 void decimate_add( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight );
 void SAD( GLuint vectorTex, GLuint refTex, GLuint avgTex, int srcWidth,
           int srcHeight, int xoffset, int yoffset, int factor );
@@ -102,6 +102,7 @@ void SAD_halfpel( GLuint vectorTex, GLuint refTex, GLuint avgTex,
 void vector_update( void );
 void vector_badcheck( void );
 void vector_range( void );
+void dump_data( GLuint tex, int x, int y );
 
 void denoiseFrame( void );
 
@@ -119,17 +120,17 @@ static int              sub4Height;
 static int              sub4Width;
 static int              frameNum;
 
-float                   luma_contrast = 100.0;
-float                   chroma_contrast = 100.0;
+float                   luma_contrast = 1.0;
+float                   chroma_contrast = 1.0;
 int                     scene_thresh = 50;
-int                     contrast_thresh = 5;
-int                     block_contrast_thresh = 8;
+float                   contrast_thresh = 0.019607843; /* 5/255 */
+int                     block_contrast_thresh = 0.031372549; /* 8/255 */
 int                     radius = 8;
-int                     block_bad_thresh = 1024;
+float                   block_bad_thresh = 4.015686275; /* 1024/255 */
 int                     delay = 3;
-int                     correct_thresh = 5;
-int                     pp_thresh = 4;
-int                     sharpen = 125;
+float                   correct_thresh = 0.019607843; /* 5/255 */
+float                   pp_thresh = 0.015686275; /* 4/255 */
+float                   sharpen = 1.25;
 
 GLuint                  glutWindowHandle;
 GLuint                  fb;
@@ -143,8 +144,11 @@ GLenum                  attachmentpoints[] = { GL_COLOR_ATTACHMENT0_EXT,
 GLenum                  texTarget         = GL_TEXTURE_RECTANGLE_NV;
 GLenum                  texIntFormatInout = GL_RGB8; /*GL_FLOAT_R16_NV; */
 GLenum                  texIntFormat      = GL_RGB16; /*GL_FLOAT_RGB32_NV; GL_RGB16;*/
+GLenum                  texIntFormatBad   = GL_LUMINANCE16; /*GL_FLOAT_RGB32_NV; GL_RGB16;*/
+GLenum                  texIntFormatVect  = GL_RGBA16; /*GL_FLOAT_RGB32_NV; GL_RGB16;*/
 GLenum                  texFormatInout    = GL_RED; /*GL_LUMINANCE;*/
 GLenum                  texFormat         = GL_RGB;
+GLenum                  texFormatVect     = GL_RGBA;
 
 GLuint                  pingpongTexID[2];
 GLuint                  frameTexID;
@@ -152,7 +156,7 @@ GLuint                  yTexID, uTexID, vTexID;
 GLuint                  refTexID, avgTexID, avg2TexID, tmpTexID;
 GLuint                  sub2refTexID, sub2avgTexID, sub4refTexID, sub4avgTexID;
 GLuint                  diffTexID, vectorTexID, vector2TexID;
-GLuint                  vector3TexID;
+GLuint                  vector3TexID, badTexID, bad2TexID;
 
 CGcontext               cgContext;
 CGprofile               fragmentProfile = CG_PROFILE_FP30;
@@ -552,6 +556,8 @@ void createTextures( void )
     glGenTextures(1, &vectorTexID);
     glGenTextures(1, &vector2TexID);
     glGenTextures(1, &vector3TexID);
+    glGenTextures(1, &badTexID);
+    glGenTextures(1, &bad2TexID);
 
     /* set up textures */
     setupTexture(frameTexID,   texIntFormat, texFormat, width, height);
@@ -568,9 +574,12 @@ void createTextures( void )
     setupTexture(sub4refTexID, texIntFormat, texFormat, sub4Width, sub4Height);
     setupTexture(sub4avgTexID, texIntFormat, texFormat, sub4Width, sub4Height);
 
-    setupTexture(vectorTexID,  texIntFormat, texFormat, vecWidth, vecHeight);
-    setupTexture(vector2TexID, texIntFormat, texFormat, vecWidth, vecHeight);
-    setupTexture(vector3TexID, texIntFormat, texFormat, vecWidth, vecHeight);
+    setupTexture(vectorTexID,  texIntFormatVect, texFormatVect, vecWidth, vecHeight);
+    setupTexture(vector2TexID, texIntFormatVect, texFormatVect, vecWidth, vecHeight);
+    setupTexture(vector3TexID, texIntFormatVect, texFormatVect, vecWidth, vecHeight);
+    
+    setupTexture(badTexID, texIntFormat, texFormatInout, vecWidth, vecHeight);
+    setupTexture(bad2TexID, texIntFormat, texFormatInout, vecWidth, vecHeight);
 
     /* The Y, U & V input textures */
     setupTexture(yTexID, texIntFormatInout, texFormatInout, width, height);
@@ -662,9 +671,9 @@ void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData)
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, frameTexID, 0);
     checkGLErrors("glFramebufferTexture2DEXT(in)");
-    checkFramebufferStatus(0);
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(in)");
+    checkFramebufferStatus(0);
     drawQuad( width, height, width, height );
 
     detachFBOs();
@@ -699,16 +708,16 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData)
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, yTexID, 0);
     checkGLErrors("glFramebufferTexture2DEXT(yOut)");
-    checkFramebufferStatus(1);
 
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(yOut)");
+    checkFramebufferStatus(1);
     drawQuad( width, height, width, height );
 
-    checkFramebufferStatus(2);
 
     glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glReadBuffer(yOut)");
+    checkFramebufferStatus(2);
     glReadPixels( 0, 0, width, height, texFormatInout, GL_UNSIGNED_BYTE, 
                   yData );
     checkGLErrors("glReadPixels(yOut)");
@@ -726,10 +735,10 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData)
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, uTexID, 0);
     checkGLErrors("glFramebufferTexture2DEXT(uOut)");
-    checkFramebufferStatus(3);
 
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(uOut)");
+    checkFramebufferStatus(3);
     drawQuad( width, height, width / 2, height / 2 );
     glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glReadBuffer(uOut)");
@@ -750,10 +759,10 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData)
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, vTexID, 0);
     checkGLErrors("glFrameBufferTexture2DEXT(vOut)");
-    checkFramebufferStatus(4);
 
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(vOut)");
+    checkFramebufferStatus(4);
     drawQuad( width, height, width / 2, height / 2 );
     glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glReadBuffer(vOut)");
@@ -762,6 +771,9 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData)
     checkGLErrors("glReadPixels(vOut)");
 
     detachFBOs();
+
+    /* Disable the read buffer so it won't cause issues elsewhere */
+    glReadBuffer( GL_NONE );
 }
 
 void unloadRaw(uint8 *yData, uint8 *uData, uint8 *vData, 
@@ -783,10 +795,10 @@ void unloadRaw(uint8 *yData, uint8 *uData, uint8 *vData,
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, frameTexID, 0);
     checkGLErrors("glFramebufferTexture2DEXT(frameTexID)");
-    checkFramebufferStatus(7);
 
     glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glReadBuffer(frameTexID)");
+    checkFramebufferStatus(7);
     glReadPixels( 0, 0, width, height, GL_RGB, GL_FLOAT, data );
     checkGLErrors("glReadPixels(frameTexID)");
 
@@ -809,6 +821,7 @@ void unloadRaw(uint8 *yData, uint8 *uData, uint8 *vData,
     }
 
     fclose(fp);
+    free(data);
 }
 
 
@@ -851,11 +864,11 @@ void copy_frame( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight,
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, destTex, 0);
     checkGLErrors("glFramebufferTexture2DEXT(dest)");
-    checkFramebufferStatus(1);
 
     /* Attach the output */
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(dest)");
+    checkFramebufferStatus(1);
     drawQuad( srcWidth, srcHeight, destWidth, destHeight );
 
     checkFramebufferStatus(2);
@@ -871,6 +884,8 @@ void contrast_frame( void )
     /* Takes input from ref, sends output to ref */
     pingpongTexID[readTex] = refTexID;
     pingpongTexID[writeTex] = tmpTexID;
+    glDrawBuffer( attachmentpoints[writeTex] );
+    checkGLErrors("glDrawBuffer(write)");
     attachPingPongFBOs();
 
     if( !cgIsProgramCompiled( frProgContrastFrame ) ) {
@@ -889,8 +904,6 @@ void contrast_frame( void )
     cgGLBindProgram( frProgContrastFrame );
 
     /* Attach the output */
-    glDrawBuffer( attachmentpoints[writeTex] );
-    checkGLErrors("glDrawBuffer(write)");
     drawQuad( width, padHeight, width, padHeight );
 
     checkFramebufferStatus(2);
@@ -946,18 +959,18 @@ void diff_frame( GLuint destTex, GLuint srcATex, GLuint srcBTex, int srcWidth,
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, destTex, 0);
     checkGLErrors("glFramebufferTexture2DEXT(dest)");
-    checkFramebufferStatus(1);
 
     /* Attach the output */
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(dest)");
+    checkFramebufferStatus(1);
     drawQuad( srcWidth, srcHeight, srcWidth, srcHeight );
 
     checkFramebufferStatus(2);
 }
 
 void thresh_diff( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight,
-                  int threshold )
+                  float threshold )
 {
     CGparameter frameParam;
     CGparameter threshParam;
@@ -981,7 +994,7 @@ void thresh_diff( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight,
     cgGLSetTextureParameter( frameParam, srcTex );
     cgGLEnableTextureParameter( frameParam );
     threshParam = cgGetNamedParameter( frProgThreshDiff, "threshold" );
-    cgGLSetParameter1f( threshParam, (float)threshold );
+    cgGLSetParameter1f( threshParam, threshold );
     cgGLLoadProgram( frProgThreshDiff );
     cgGLBindProgram( frProgThreshDiff );
 
@@ -991,11 +1004,11 @@ void thresh_diff( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight,
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, destTex, 0);
     checkGLErrors("glFramebufferTexture2DEXT(dest)");
-    checkFramebufferStatus(1);
 
     /* Attach the output */
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(dest)");
+    checkFramebufferStatus(1);
     drawQuad( srcWidth, srcHeight, srcWidth, srcHeight );
 
     checkFramebufferStatus(2);
@@ -1041,11 +1054,11 @@ void decimate_add( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight )
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, destTex, 0);
     checkGLErrors("glFramebufferTexture2DEXT(dest)");
-    checkFramebufferStatus(1);
 
     /* Attach the output */
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(dest)");
+    checkFramebufferStatus(1);
     drawQuad( srcWidth, srcHeight, (srcWidth+1) / 2, (srcHeight+1) / 2 );
 
     checkFramebufferStatus(2);
@@ -1054,7 +1067,7 @@ void decimate_add( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight )
 }
 
 void vector_low_contrast( GLuint destTex, GLuint srcTex, int srcWidth, 
-                          int srcHeight, int threshold )
+                          int srcHeight, float threshold )
 {
     CGparameter frameParam;
     CGparameter threshParam;
@@ -1078,7 +1091,7 @@ void vector_low_contrast( GLuint destTex, GLuint srcTex, int srcWidth,
     cgGLSetTextureParameter( frameParam, srcTex );
     cgGLEnableTextureParameter( frameParam );
     threshParam = cgGetNamedParameter( frProgVectorLowContrast, "threshold" );
-    cgGLSetParameter1f( threshParam, (float)threshold );
+    cgGLSetParameter1f( threshParam, threshold );
     cgGLLoadProgram( frProgVectorLowContrast );
     cgGLBindProgram( frProgVectorLowContrast );
 
@@ -1088,11 +1101,11 @@ void vector_low_contrast( GLuint destTex, GLuint srcTex, int srcWidth,
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, destTex, 0);
     checkGLErrors("glFramebufferTexture2DEXT(dest)");
-    checkFramebufferStatus(1);
 
     /* Attach the output */
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(dest)");
+    checkFramebufferStatus(1);
     drawQuad( srcWidth, srcHeight, srcWidth, srcHeight );
 
     checkFramebufferStatus(2);
@@ -1164,11 +1177,11 @@ void SAD( GLuint vectorTex, GLuint refTex, GLuint avgTex, int srcWidth,
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, vectorTex, 0);
     checkGLErrors("glFramebufferTexture2DEXT(vector)");
-    checkFramebufferStatus(1);
 
     /* Attach the output */
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(vector)");
+    checkFramebufferStatus(1);
     drawQuad( srcWidth, srcHeight, vecWidth, vecHeight );
 
     checkFramebufferStatus(2);
@@ -1231,11 +1244,11 @@ void SAD_pass2( GLuint vectorTex, GLuint refTex, GLuint avgTex,
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, vectorTex, 0);
     checkGLErrors("glFramebufferTexture2DEXT(vector)");
-    checkFramebufferStatus(1);
 
     /* Attach the output */
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(vector)");
+    checkFramebufferStatus(1);
     drawQuad( srcWidth, srcHeight, vecWidth, vecHeight );
 
     checkFramebufferStatus(2);
@@ -1298,11 +1311,11 @@ void SAD_halfpel( GLuint vectorTex, GLuint refTex, GLuint avgTex,
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, vectorTex, 0);
     checkGLErrors("glFramebufferTexture2DEXT(vector)");
-    checkFramebufferStatus(1);
 
     /* Attach the output */
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(vector)");
+    checkFramebufferStatus(1);
     drawQuad( srcWidth, srcHeight, vecWidth, vecHeight );
 
     checkFramebufferStatus(2);
@@ -1326,6 +1339,8 @@ void vector_update( void )
 
     pingpongTexID[readTex] = vectorTexID;
     pingpongTexID[writeTex] = vector3TexID;
+    glDrawBuffer( attachmentpoints[writeTex] );
+    checkGLErrors("glDrawBuffer(write)");
     attachPingPongFBOs();
 
     /* Setup the source textures */
@@ -1345,8 +1360,6 @@ void vector_update( void )
     cgGLBindProgram( frProgVectorUpdate );
 
     /* Attach the output */
-    glDrawBuffer( attachmentpoints[writeTex] );
-    checkGLErrors("glDrawBuffer(write)");
     drawQuad( vecWidth, vecHeight, vecWidth, vecHeight );
 
     checkFramebufferStatus(2);
@@ -1357,6 +1370,46 @@ void vector_update( void )
     detachFBOs();
 }
 
+void dump_data( GLuint tex, int x, int y )
+{
+    FILE           *fp;
+    float          *data;
+    int             i;
+    int             j;
+
+    data = (float *)malloc(x*y*sizeof(float));
+
+    detachFBOs();
+    glDrawBuffer( GL_NONE );
+    glBindTexture(texTarget, tex);
+    checkGLErrors("glBindTexture(dump)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, tex, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(tex)");
+    glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glReadBuffer(tex)");
+    glReadPixels( 0, 0, x, y, GL_RED, GL_FLOAT, data );
+    checkGLErrors("glReadPixels(tex)");
+
+    glReadBuffer( GL_NONE );
+    detachFBOs();
+
+    fp = fopen( "/tmp/dump.out", "at" );
+
+    for( i = 0; i < y; i++ ) {
+        fprintf(fp, "Row %d:  ", i );
+        for( j = 0; j < x; j++ ) {
+            fprintf(fp, "%f ", data[i*x + j]);
+        }
+        fprintf(fp, "\n");
+    }
+
+    fprintf(fp, "\n\n");
+    fclose(fp);
+
+    free(data);
+}
+
 void vector_badcheck( void )
 {
     CGparameter     vectorParam;
@@ -1365,7 +1418,8 @@ void vector_badcheck( void )
     int             y;
     int             xx;
     int             yy;
-    unsigned int    bad_count;
+    float           bad_count;
+    GLuint          temp;
 
     x = vecWidth;
     y = vecHeight;
@@ -1386,36 +1440,43 @@ void vector_badcheck( void )
     cgGLEnableTextureParameter( vectorParam );
 
     threshParam = cgGetNamedParameter( frProgVectorBadcheck, "block_thresh" );
-    cgGLSetParameter1f( threshParam, (float)block_bad_thresh );
+    cgGLSetParameter1f( threshParam, block_bad_thresh );
 
     cgGLLoadProgram( frProgVectorBadcheck );
     cgGLBindProgram( frProgVectorBadcheck );
 
     /* Setup the destination */
-    glBindTexture(texTarget, vector2TexID);
-    checkGLErrors("glBindTexture(vector2)");
+    glBindTexture(texTarget, badTexID);
+    checkGLErrors("glBindTexture(bad)");
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
-                              texTarget, vector2TexID, 0);
-    checkGLErrors("glFramebufferTexture2DEXT(vector2)");
-    checkFramebufferStatus(1);
+                              texTarget, badTexID, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(bad)");
 
     /* Attach the output */
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
-    checkGLErrors("glDrawBuffer(vector2)");
+    checkGLErrors("glDrawBuffer(bad)");
+    checkFramebufferStatus(1);
     drawQuad( x, y, x, y );
 
     checkFramebufferStatus(2);
-
-    pingpongTexID[readTex] = vector2TexID;
-    pingpongTexID[writeTex] = vector3TexID;
+#if 0
+    dump_data( badTexID, x, y );
+#endif
 
     /* Decimate the bad_vector data down to a single number */
     while( x > 1 && y > 1 ) {
         xx = (x + 1) / 2;
         yy = (y + 1) / 2;
 
-        decimate_add( pingpongTexID[writeTex], pingpongTexID[readTex], x, y );
-        swap();
+        decimate_add( bad2TexID, badTexID, x, y );
+#if 0
+        dump_data( bad2TexID, xx, yy );
+        dump_data( bad2TexID, xx, yy );
+#endif
+        temp = bad2TexID;
+        bad2TexID = badTexID;
+        badTexID = temp;
+
         x = xx;
         y = yy;
     }
@@ -1423,14 +1484,24 @@ void vector_badcheck( void )
     /* now read back that one value
      */
     detachFBOs();
-    swap();
-    attachPingPongFBOs();
-    glReadBuffer( attachmentpoints[writeTex] );
-    checkGLErrors("glReadBuffer(bad_vec)");
-    glReadPixels( 0, 0, 1, 1, texFormatInout, GL_UNSIGNED_INT, &bad_count );
-    checkGLErrors("glReadPixels(bad_vec)");
+    glDrawBuffer( GL_NONE );
+    glBindTexture(texTarget, badTexID);
+    checkGLErrors("glBindTexture(bad)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, badTexID, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(bad)");
+    glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glReadBuffer(bad)");
+    glReadPixels( 0, 0, 1, 1, texFormatInout, GL_FLOAT, &bad_count );
+    checkGLErrors("glReadPixels(bad)");
 
-    bad_vector += bad_count;
+#if 0
+    LogPrint( LOG_CRIT, "bad_count: %f", bad_count );
+#endif
+    bad_vector += (int)bad_count;
+
+    glReadBuffer( GL_NONE );
+    glDrawBuffer( GL_NONE );
 
     detachFBOs();
 }
@@ -1449,6 +1520,8 @@ void vector_range( void )
     /* Setup the source textures */
     pingpongTexID[readTex] = vectorTexID;
     pingpongTexID[writeTex] = vector3TexID;
+    glDrawBuffer( attachmentpoints[writeTex] );
+    checkGLErrors("glDrawBuffer(write)");
     attachPingPongFBOs();
 
     /* Setup the Cg parameters, bind the program */
@@ -1463,8 +1536,6 @@ void vector_range( void )
     cgGLBindProgram( frProgVectorRange );
 
     /* Attach the output */
-    glDrawBuffer( attachmentpoints[writeTex] );
-    checkGLErrors("glDrawBuffer(write)");
     drawQuad( vecWidth, vecHeight, vecWidth, vecHeight );
 
     checkFramebufferStatus(2);
@@ -1574,11 +1645,12 @@ void move_frame( void )
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, tmpTexID, 0);
     checkGLErrors("glFramebufferTexture2DEXT(tmp)");
-    checkFramebufferStatus(1);
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
 
     /* Attach the output */
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(tmp)");
+    checkFramebufferStatus(1);
     drawQuad( width, padHeight, width, padHeight );
 
     checkFramebufferStatus(2);
@@ -1629,11 +1701,11 @@ void average_frame( void )
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, tmpTexID, 0);
     checkGLErrors("glFramebufferTexture2DEXT(tmp)");
-    checkFramebufferStatus(1);
 
     /* Attach the output */
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(tmp)");
+    checkFramebufferStatus(1);
     drawQuad( width, padHeight, width, padHeight );
 
     checkFramebufferStatus(2);
@@ -1673,7 +1745,7 @@ void correct_frame2( void )
     cgGLEnableTextureParameter( frameBParam );
 
     threshParam = cgGetNamedParameter( frProgCorrectFrame2, "threshold" );
-    cgGLSetParameter1f( threshParam, (float)correct_thresh );
+    cgGLSetParameter1f( threshParam, correct_thresh );
 
     cgGLLoadProgram( frProgCorrectFrame2 );
     cgGLBindProgram( frProgCorrectFrame2 );
@@ -1684,11 +1756,11 @@ void correct_frame2( void )
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, tmpTexID, 0);
     checkGLErrors("glFramebufferTexture2DEXT(tmp)");
-    checkFramebufferStatus(1);
 
     /* Attach the output */
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(tmp)");
+    checkFramebufferStatus(1);
     drawQuad( width, padHeight, width, padHeight );
 
     checkFramebufferStatus(2);
@@ -1729,7 +1801,7 @@ void denoise_frame_pass2( void )
 
     threshParam = cgGetNamedParameter( frProgDenoiseFramePass2, 
                                        "pp_threshold" );
-    cgGLSetParameter1f( threshParam, (float)pp_thresh );
+    cgGLSetParameter1f( threshParam, pp_thresh );
 
     cgGLLoadProgram( frProgDenoiseFramePass2 );
     cgGLBindProgram( frProgDenoiseFramePass2 );
@@ -1740,11 +1812,11 @@ void denoise_frame_pass2( void )
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, tmpTexID, 0);
     checkGLErrors("glFramebufferTexture2DEXT(tmp)");
-    checkFramebufferStatus(1);
 
     /* Attach the output */
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(tmp)");
+    checkFramebufferStatus(1);
     drawQuad( width, padHeight, width, padHeight );
 
     checkFramebufferStatus(2);
@@ -1777,7 +1849,7 @@ void sharpen_frame( void )
     cgGLEnableTextureParameter( frameParam );
 
     sharpenParam = cgGetNamedParameter( frProgSharpenFrame, "sharpen" );
-    cgGLSetParameter1f( sharpenParam, (float)sharpen );
+    cgGLSetParameter1f( sharpenParam, sharpen );
 
     cgGLLoadProgram( frProgSharpenFrame );
     cgGLBindProgram( frProgSharpenFrame );
@@ -1788,11 +1860,11 @@ void sharpen_frame( void )
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, tmpTexID, 0);
     checkGLErrors("glFramebufferTexture2DEXT(tmp)");
-    checkFramebufferStatus(1);
 
     /* Attach the output */
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(tmp)");
+    checkFramebufferStatus(1);
     drawQuad( width, padHeight, width, padHeight );
 
     checkFramebufferStatus(2);
@@ -1826,6 +1898,9 @@ void denoiseFrame( void )
                    32);
     }
 
+#if 0
+    LogPrint( LOG_CRIT, "Frame %d", frameNum );
+#endif
     contrast_frame();
     decimate_frame(sub2refTexID, refTexID, width, padHeight);
     decimate_frame(sub2avgTexID, avgTexID, width, padHeight);

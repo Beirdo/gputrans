@@ -259,7 +259,7 @@ float3 sharpen_frame( float2 coord                : TEXCOORD0,
     d *= sharpen;
 
     output.x = clamp( m+d, 0.062745098, 0.921568627 );
-    output.yz = value.yz;
+    output.yz = clamp( value.yz, 0.062745098, 0.937254902 );
 
     return output;
 }
