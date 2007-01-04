@@ -67,7 +67,7 @@ int                     childCount = 0;
 char                   *shmBlock;
 int                     numChildren = -1;
 static sharedMem_t     *sharedMem;
-bool                    Debug = TRUE;
+bool                    Debug = FALSE;
 bool                    GlobalAbort = FALSE;
 extern QueueObject_t   *ChildMsgQ;
 extern unsigned char   *frameBlock;
