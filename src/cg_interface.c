@@ -1021,9 +1021,11 @@ void decimate_add( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight )
         cgCompileProgram( frProgDecimateAdd );
     }
 
+#if 0
     if( !cgIsProgramCompiled( vxProgDecimateBy2 ) ) {
         cgCompileProgram( vxProgDecimateBy2 );
     }
+#endif
 
     /* Setup the source texture */
     glBindTexture(texTarget, srcTex);
@@ -1036,10 +1038,12 @@ void decimate_add( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight )
     cgGLLoadProgram( frProgDecimateAdd );
     cgGLBindProgram( frProgDecimateAdd );
 
+#if 0
     /* Also setup the vertex program */
     cgGLLoadProgram( vxProgDecimateBy2 );
     cgGLEnableProfile( vertexProfile );
     cgGLBindProgram( vxProgDecimateBy2 );
+#endif
 
     /* Setup the destination */
     glBindTexture(texTarget, destTex);
@@ -1056,7 +1060,9 @@ void decimate_add( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight )
 
     checkFramebufferStatus(2);
 
+#if 0
     cgGLDisableProfile( vertexProfile );
+#endif
 }
 
 void vector_low_contrast( GLuint destTex, GLuint srcTex, int srcWidth, 
@@ -1907,6 +1913,9 @@ void denoiseFrame( void )
     mb_search_00();
     move_frame();
 
+#if 0
+    LogPrint( LOG_CRIT, "Frame %d - %d bad_vector", frameNum, bad_vector );
+#endif
     if( ( width * height * scene_thresh / 6400 ) < bad_vector ) {
         /* Scene change */
         new_scene = TRUE;
@@ -1917,12 +1926,10 @@ void denoiseFrame( void )
     average_frame();
     correct_frame2();
     denoise_frame_pass2();
-#if 0
     sharpen_frame();
-#endif
 
     /* Copy the output back to be read */
-    copy_frame(frameTexID, tmpTexID, width, padHeight, height, width, 0, -32);
+    copy_frame(frameTexID, avg2TexID, width, padHeight, width, height, 0, -32);
 
     /* Just to be sure */
     detachFBOs();
