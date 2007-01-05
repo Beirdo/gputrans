@@ -69,7 +69,7 @@ CGprogram loadCgProgram( char *name, char *file, char *entry,
                          CGprofile profile );
 
 void copy_frame( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight, 
-                 int destWidth, int destHeight, int xOffset, int yOffset );
+                 int destWidth, int destHeight );
 void contrast_frame( void );
 void decimate_frame( GLuint destTex, GLuint srcTex, int srcWidth, 
                      int srcHeight );
@@ -167,7 +167,7 @@ CGprogram               frProgContrastFrame, frProgDiffFrame, frProgThreshDiff;
 CGprogram               frProgDecimateAdd, frProgMoveFrame, frProgAverageFrame;
 CGprogram               frProgCorrectFrame2, frProgDenoiseFramePass2;
 CGprogram               frProgSharpenFrame, frProgSAD, frProgSADHalfpel;
-CGprogram               frProgZero, frProgCopy, frProgVectorUpdate;
+CGprogram               frProgCopy, frProgVectorUpdate;
 CGprogram               frProgVectorBadcheck, frProgVectorRange;
 CGprogram               frProgVectorLowContrast, frProgSADPass2;
 
@@ -201,7 +201,6 @@ static cgProgram_t cgPrograms[] = {
     { &frProgSharpenFrame, "SharpenFrame", "yuvdenoise.cg", "sharpen_frame", FP30 },
     { &frProgSAD, "SAD", "yuvdenoise.cg", "SAD", FP30 },
     { &frProgSADHalfpel, "SADHalfpel", "yuvdenoise.cg", "SAD_halfpel", FP30 },
-    { &frProgZero, "Zero", "yuvdenoise.cg", "zero", FP30 },
     { &frProgCopy, "Copy", "yuvdenoise.cg", "copy", FP30 },
     { &frProgVectorUpdate, "VectorUpdate", "yuvdenoise.cg", "vector_update", FP30 },
     { &frProgVectorBadcheck, "VectorBadcheck", "yuvdenoise.cg", "vector_badcheck", FP30 },
@@ -553,7 +552,7 @@ void createTextures( void )
     glGenTextures(1, &bad2TexID);
 
     /* set up textures */
-    setupTexture(frameTexID,   texIntFormat, texFormat, width, height);
+    setupTexture(frameTexID,   texIntFormat, texFormat, width, padHeight);
 
     setupTexture(refTexID,     texIntFormat, texFormat, width, padHeight);
     setupTexture(avgTexID,     texIntFormat, texFormat, width, padHeight);
@@ -575,11 +574,11 @@ void createTextures( void )
     setupTexture(bad2TexID, texIntFormat, texFormatInout, vecWidth, vecHeight);
 
     /* The Y, U & V input textures */
-    setupTexture(yTexID, texIntFormatInout, texFormatInout, width, height);
+    setupTexture(yTexID, texIntFormatInout, texFormatInout, width, padHeight);
     setupTexture(uTexID, texIntFormatInout, texFormatInout, width / 2, 
-                 height / 2);
+                 padHeight / 2);
     setupTexture(vTexID, texIntFormatInout, texFormatInout, width / 2, 
-                 height / 2);
+                 padHeight / 2);
 }
 
 
@@ -626,19 +625,19 @@ void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData)
     /* transfer data vector to input texture */
     glBindTexture(texTarget, yTexID);
     checkGLErrors("glBindTexture(Y)");
-    glTexSubImage2D(texTarget, 0, 0, 0, width, height, texFormatInout, 
+    glTexSubImage2D(texTarget, 0, 0, 32, width, height, texFormatInout, 
                     GL_UNSIGNED_BYTE, yData);
     checkGLErrors("glTexSubImage2D(Y)");
 
     glBindTexture(texTarget, uTexID);
     checkGLErrors("glBindTexture(U)");
-    glTexSubImage2D(texTarget, 0, 0, 0, width / 2, height / 2, texFormatInout, 
+    glTexSubImage2D(texTarget, 0, 0, 16, width / 2, height / 2, texFormatInout, 
                     GL_UNSIGNED_BYTE, uData);
     checkGLErrors("glTexSubImage2D(U)");
 
     glBindTexture(texTarget, vTexID);
     checkGLErrors("glBindTexture(V)");
-    glTexSubImage2D(texTarget, 0, 0, 0, width / 2, height / 2, texFormatInout, 
+    glTexSubImage2D(texTarget, 0, 0, 16, width / 2, height / 2, texFormatInout, 
                     GL_UNSIGNED_BYTE, vData);
     checkGLErrors("glTexSubImage2D(V)");
 
@@ -667,7 +666,7 @@ void loadFrame(uint8 *yData, uint8 *uData, uint8 *vData)
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(in)");
     checkFramebufferStatus(0);
-    drawQuad( width, height, width, height );
+    drawQuad( width, padHeight, width, padHeight );
 
     detachFBOs();
 }
@@ -705,13 +704,13 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData)
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(yOut)");
     checkFramebufferStatus(1);
-    drawQuad( width, height, width, height );
+    drawQuad( width, padHeight, width, padHeight );
 
 
     glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glReadBuffer(yOut)");
     checkFramebufferStatus(2);
-    glReadPixels( 0, 0, width, height, texFormatInout, GL_UNSIGNED_BYTE, 
+    glReadPixels( 0, 32, width, height, texFormatInout, GL_UNSIGNED_BYTE, 
                   yData );
     checkGLErrors("glReadPixels(yOut)");
 
@@ -732,10 +731,10 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData)
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(uOut)");
     checkFramebufferStatus(3);
-    drawQuad( width, height, width / 2, height / 2 );
+    drawQuad( width, padHeight, width / 2, padHeight / 2 );
     glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glReadBuffer(uOut)");
-    glReadPixels( 0, 0, width / 2, height / 2, texFormatInout, GL_UNSIGNED_BYTE,
+    glReadPixels( 0, 16, width / 2, height / 2, texFormatInout, GL_UNSIGNED_BYTE,
                   uData );
     checkGLErrors("glReadPixels(uOut)");
 
@@ -756,10 +755,10 @@ void unloadFrame(uint8 *yData, uint8 *uData, uint8 *vData)
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(vOut)");
     checkFramebufferStatus(4);
-    drawQuad( width, height, width / 2, height / 2 );
+    drawQuad( width, padHeight, width / 2, padHeight / 2 );
     glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glReadBuffer(vOut)");
-    glReadPixels( 0, 0, width / 2, height / 2, texFormatInout, GL_UNSIGNED_BYTE,
+    glReadPixels( 0, 16, width / 2, height / 2, texFormatInout, GL_UNSIGNED_BYTE,
                   vData );
     checkGLErrors("glReadPixels(vOut)");
 
@@ -823,10 +822,9 @@ void unloadRaw(uint8 *yData, uint8 *uData, uint8 *vData,
  */
 
 void copy_frame( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight, 
-                 int destWidth, int destHeight, int xOffset, int yOffset )
+                 int destWidth, int destHeight )
 {
     CGparameter frameParam;
-    CGparameter offsetParam;
 
     if( srcTex == destTex ) {
         return;
@@ -846,8 +844,7 @@ void copy_frame( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight,
     frameParam = cgGetNamedParameter( frProgCopy, "frame" );
     cgGLSetTextureParameter( frameParam, srcTex );
     cgGLEnableTextureParameter( frameParam );
-    offsetParam = cgGetNamedParameter( frProgCopy, "offset" );
-    cgGLSetParameter2f( offsetParam, (float)xOffset, (float)yOffset );
+
     cgGLLoadProgram( frProgCopy );
     cgGLBindProgram( frProgCopy );
 
@@ -911,7 +908,7 @@ void decimate_frame( GLuint destTex, GLuint srcTex, int srcWidth,
                      int srcHeight )
 {
     copy_frame( destTex, srcTex, srcWidth, srcHeight, (srcWidth + 1) / 2,
-                (srcHeight + 1) / 2, 0, 0 );
+                (srcHeight + 1) / 2 );
 }
 
 void diff_frame( GLuint destTex, GLuint srcATex, GLuint srcBTex, int srcWidth,
@@ -1881,7 +1878,7 @@ void denoiseFrame( void )
     frameNum++;
 
     /* Copy input frame to ref */
-    copy_frame(refTexID, frameTexID, width, height, width, padHeight, 0, 32);
+    copy_frame(refTexID, frameTexID, width, height, width, padHeight);
 
     if( new_scene ) {
         new_scene = FALSE;
@@ -1889,12 +1886,10 @@ void denoiseFrame( void )
         LogPrint( LOG_NOTICE, "New Scene detected, frame %d", frameNum );
 
         /* Copy input frame to avg */
-        copy_frame(avgTexID, frameTexID, width, height, width, padHeight, 0,
-                   32);
+        copy_frame(avgTexID, frameTexID, width, height, width, padHeight);
 
         /* Copy input frame to avg2 */
-        copy_frame(avg2TexID, frameTexID, width, height, width, padHeight, 0,
-                   32);
+        copy_frame(avg2TexID, frameTexID, width, height, width, padHeight);
     }
 
 #if 0
@@ -1929,7 +1924,7 @@ void denoiseFrame( void )
     sharpen_frame();
 
     /* Copy the output back to be read */
-    copy_frame(frameTexID, avg2TexID, width, padHeight, width, height, 0, -32);
+    copy_frame(frameTexID, avg2TexID, width, padHeight, width, padHeight);
 
     /* Just to be sure */
     detachFBOs();

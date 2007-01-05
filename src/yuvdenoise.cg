@@ -122,7 +122,6 @@ float3 move_frame( float2   coord               : TEXCOORD0,
     string id = "$Id$";
 
     float3 value;
-    float2 newCoord;
     float2 vecCoord;
     float2 vec;
     float2 q, s;
@@ -334,28 +333,14 @@ float4 SAD_halfpel( float2 coord                 : TEXCOORD0,
     return newvec;
 }
 
-float4 zero( float2 coord                : TEXCOORD0 ) : COLOR
+float3 copy( float2 coord               : TEXCOORD0,
+             uniform samplerRECT frame  : TEXUNIT0 ) : COLOR
 {
     string id = "$Id$";
 
-    float4 zeros;
+    float3 value;
 
-    zeros.xyzw = 0.0;
-    return zeros;
-}
-
-float4 copy( float2 coord               : TEXCOORD0,
-             uniform samplerRECT frame  : TEXUNIT0,
-             uniform float2 offset ) : COLOR
-{
-    string id = "$Id$";
-
-    float4 value;
-
-    /* - offset so the a positive offset means to "move down" or "move right"
-     * as that's intuitive to the user
-     */
-    value = texRECT(frame, coord - offset);
+    value = texRECT(frame, coord).xyz;
     return value;
 }
 
