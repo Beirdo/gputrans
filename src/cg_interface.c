@@ -142,11 +142,10 @@ GLenum                  attachmentpoints[] = { GL_COLOR_ATTACHMENT0_EXT,
                                                GL_COLOR_ATTACHMENT1_EXT };
  
 GLenum                  texTarget         = GL_TEXTURE_RECTANGLE_NV;
-GLenum                  texIntFormatInout = GL_RGB8; /*GL_FLOAT_R16_NV; */
-GLenum                  texIntFormat      = GL_RGB16; /*GL_FLOAT_RGB32_NV; GL_RGB16;*/
-GLenum                  texIntFormatBad   = GL_LUMINANCE16; /*GL_FLOAT_RGB32_NV; GL_RGB16;*/
-GLenum                  texIntFormatVect  = GL_RGBA16; /*GL_FLOAT_RGB32_NV; GL_RGB16;*/
-GLenum                  texFormatInout    = GL_RED; /*GL_LUMINANCE;*/
+GLenum                  texIntFormatInout = GL_RGB8;
+GLenum                  texIntFormat      = GL_RGB16; /* GL_FLOAT_RGB32_NV; GL_RGB16;*/
+GLenum                  texIntFormatVect  = GL_RGBA16;
+GLenum                  texFormatInout    = GL_RED;
 GLenum                  texFormat         = GL_RGB;
 GLenum                  texFormatVect     = GL_RGBA;
 
@@ -166,7 +165,6 @@ CGprogram               frProgYUV420pIn, frProgY420pOut, frProgU420pOut;
 CGprogram               frProgV420pOut;
 CGprogram               frProgContrastFrame, frProgDiffFrame, frProgThreshDiff;
 CGprogram               frProgDecimateAdd, frProgMoveFrame, frProgAverageFrame;
-CGprogram               frProgThresholdedDiff, frProgLowpassDiff;
 CGprogram               frProgCorrectFrame2, frProgDenoiseFramePass2;
 CGprogram               frProgSharpenFrame, frProgSAD, frProgSADHalfpel;
 CGprogram               frProgZero, frProgCopy, frProgVectorUpdate;
@@ -198,8 +196,6 @@ static cgProgram_t cgPrograms[] = {
     { &frProgDecimateAdd, "DecimateAdd", "yuvdenoise.cg", "decimate_add", FP30 },
     { &frProgMoveFrame, "MoveFrame", "yuvdenoise.cg", "move_frame", FP30 },
     { &frProgAverageFrame, "AverageFrame", "yuvdenoise.cg", "average_frame", FP30 },
-    { &frProgThresholdedDiff, "ThresholdedDiff", "yuvdenoise.cg", "thresholded_diff", FP30 },
-    { &frProgLowpassDiff, "LowpassDiff", "yuvdenoise.cg", "lowpass_diff", FP30 },
     { &frProgCorrectFrame2, "CorrectFrame2", "yuvdenoise.cg", "correct_frame2", FP30 },
     { &frProgDenoiseFramePass2, "DenoiseFramePass2", "yuvdenoise.cg", "denoise_frame_pass2", FP30 },
     { &frProgSharpenFrame, "SharpenFrame", "yuvdenoise.cg", "sharpen_frame", FP30 },
@@ -274,9 +270,6 @@ void cg_enable( int x, int y )
     }
 
     cgGLEnableProfile(fragmentProfile);
-#if 0
-    cgGLEnableProfile(vertexProfile);
-#endif
 }
 
 
@@ -1924,7 +1917,9 @@ void denoiseFrame( void )
     average_frame();
     correct_frame2();
     denoise_frame_pass2();
+#if 0
     sharpen_frame();
+#endif
 
     /* Copy the output back to be read */
     copy_frame(frameTexID, tmpTexID, width, padHeight, height, width, 0, -32);

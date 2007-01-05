@@ -139,45 +139,6 @@ float3 average_frame( float2 coord               : TEXCOORD0,
     return value;
 }
 
-float thresholded_diff( float2 coord                 : TEXCOORD0,
-                        uniform samplerRECT frameA   : TEXUNIT0,
-                        uniform samplerRECT frameB   : TEXUNIT1,
-                        uniform float threshold ) : COLOR
-{
-    string id = "$Id$";
-
-    float value;
-
-    value = texRECT( frameA, coord ).x - texRECT( frameB, coord ).x;
-    value = abs(value);
-    value = step( threshold, value ) * value;
-
-    return value;
-}
-
-float lowpass_diff( float2 coord              : TEXCOORD0,
-                    uniform samplerRECT frame : TEXUNIT0 ) : COLOR
-{
-    string id = "$Id$";
-
-    float value;
-
-    value  = texRECT( frame, coord ).x;
-    value += texRECT( frame, coord + float2(-1,-1) ).x;
-    value += texRECT( frame, coord + float2(-1, 0) ).x;
-    value += texRECT( frame, coord + float2(-1, 1) ).x;
-    value += texRECT( frame, coord + float2( 0,-1) ).x;
-    value += texRECT( frame, coord + float2( 0, 1) ).x;
-    value += texRECT( frame, coord + float2( 1,-1) ).x;
-    value += texRECT( frame, coord + float2( 1, 0) ).x;
-    value += texRECT( frame, coord + float2( 1, 1) ).x;
-    value /= 9.0;
-
-    value = clamp(4.0 * value * value, 0.0, 1.0);
-
-    return value;
-}
-
 float3 correct_frame2( float2 coord                 : TEXCOORD0,
                        uniform samplerRECT frameA   : TEXUNIT0,
                        uniform samplerRECT frameB   : TEXUNIT1,
@@ -276,11 +237,10 @@ float4 SAD( float2 coord                 : TEXCOORD0,
     float3 diff;
     float4 newvec;
 
-    sad = 0.0;
     coord = ((coord - 0.5) * factor) + 0.5;
     diff = abs( texRECT( frameA, coord ).xyz - 
                 texRECT( frameB, coord + offset ).xyz );
-    sad += diff.x + diff.y + diff.z;
+    sad = diff.x + diff.y + diff.z;
     sad += (offset.x * offset.x);
     sad += (offset.y * offset.y);
     
@@ -311,11 +271,10 @@ float4 SAD_pass2( float2 coord                 : TEXCOORD0,
     newoffset += offset;
 
     /* Account for the decimation of the vector to read out of the frame */
-    sad = 0.0;
     coord = ((coord - 0.5) * factor) + 0.5;
     diff = abs( texRECT( frameA, coord ).xyz - 
                 texRECT( frameB, coord + newoffset ).xyz );
-    sad += diff.x + diff.y + diff.z;
+    sad = diff.x + diff.y + diff.z;
     
     newvec.xy = newoffset;
     newvec.z = sad;
@@ -343,12 +302,11 @@ float4 SAD_halfpel( float2 coord                 : TEXCOORD0,
     newoffset = texRECT( vector, coord ).xy;
 
     /* Account for the decimation of the vector to read from the frame */
-    sad = 0.0;
     coord = ((coord - 0.5) * factor) + 0.5;
-    diff = abs( ((texRECT( frameA, coord + newoffset ).xyz + 
-                  texRECT( frameA, coord + newoffset + offset ).xyz ) / 2.0 ) - 
-                texRECT( frameB, coord ).xyz );
-    sad += diff.x + diff.y + diff.z;
+    diff = abs( ((texRECT( frameB, coord + newoffset ).xyz + 
+                  texRECT( frameB, coord + newoffset + offset ).xyz ) / 2.0 ) - 
+                texRECT( frameA, coord ).xyz );
+    sad = diff.x + diff.y + diff.z;
     
     newvec.xy = offset + (2 * newoffset);
     newvec.z  = sad;
