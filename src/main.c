@@ -247,7 +247,7 @@ bool sendFrame( int childNum )
                      sizeof(ChildMsg_t) + 
                      ELEMSIZE( renderFrame, ChildMsgPayload_t ) - 
                      ELEMSIZE( payload, ChildMsg_t ) );
-#if 0
+#if 1
     videoIn( msgFrame->payload.renderFrame.frameNum, 
              msgFrame->payload.renderFrame.indexIn );
 #endif
