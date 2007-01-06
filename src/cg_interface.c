@@ -103,8 +103,12 @@ void vector_update( void );
 void vector_badcheck( void );
 void vector_range( void );
 void dump_data( GLuint tex, int x, int y );
+void dump_ppm( GLuint tex, int x, int y, int yOff, char *filepatt );
 
 void denoiseFrame( void );
+
+extern void save_ppm( const unsigned char *rgb, size_t cols, size_t rows, 
+                      int pixsize, const char *file );
 
 static int              me;
 static bool             new_scene;
@@ -171,7 +175,9 @@ CGprogram               frProgCopy, frProgVectorUpdate;
 CGprogram               frProgVectorBadcheck, frProgVectorRange;
 CGprogram               frProgVectorLowContrast, frProgSADPass2;
 
+#if 0
 CGprogram               vxProgDecimateBy2;
+#endif
 
 #define FP30 CG_PROFILE_FP30
 #define VP30 CG_PROFILE_VP30
@@ -189,7 +195,9 @@ static cgProgram_t cgPrograms[] = {
     { &frProgY420pOut,  "Y420pOut",  "yuv420p.cg", "y_output",  FP30 },
     { &frProgU420pOut,  "U420pOut",  "yuv420p.cg", "u_output",  FP30 },
     { &frProgV420pOut,  "V420pOut",  "yuv420p.cg", "v_output",  FP30 },
+#if 0
     { &vxProgDecimateBy2, "DecimateBy2", "decimate.cg", "decimate_by_2", VP30 },
+#endif
     { &frProgContrastFrame, "ContrastFrame", "yuvdenoise.cg", "contrast_frame", FP30 },
     { &frProgDiffFrame, "DiffFrame", "yuvdenoise.cg", "diff_frame", FP30 },
     { &frProgThreshDiff, "ThreshDiff", "yuvdenoise.cg", "thresh_diff", FP30 },
@@ -827,6 +835,7 @@ void copy_frame( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight,
     CGparameter frameParam;
 
     if( srcTex == destTex ) {
+        LogPrint( LOG_CRIT, "Copy %d to itself", srcTex );
         return;
     }
 
@@ -835,6 +844,11 @@ void copy_frame( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight,
     if( !cgIsProgramCompiled( frProgCopy ) ) {
         cgCompileProgram( frProgCopy );
     }
+
+#if 0
+    LogPrint( LOG_CRIT, "Copy Texture %d (%dx%d) to Texture %d (%dx%d)",
+              srcTex, srcWidth, srcHeight, destTex, destWidth, destHeight );
+#endif
 
     /* Setup the source texture */
     glBindTexture(texTarget, srcTex);
@@ -851,6 +865,7 @@ void copy_frame( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight,
     /* Setup the destination */
     glBindTexture(texTarget, destTex);
     checkGLErrors("glBindTexture(dest)");
+
     glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
                               texTarget, destTex, 0);
     checkGLErrors("glFramebufferTexture2DEXT(dest)");
@@ -1110,6 +1125,9 @@ void vector_low_contrast( GLuint destTex, GLuint srcTex, int srcWidth,
 void mark_low_contrast_blocks( void )
 {
     diff_frame( diffTexID, refTexID, avgTexID, width, padHeight );
+#if 0
+    dump_ppm( diffTexID, width, height, 32, "/tmp/diff%05d.ppm" );
+#endif
     thresh_diff( tmpTexID, diffTexID, width, padHeight, contrast_thresh );
 
     decimate_add( diffTexID, tmpTexID, width, padHeight );
@@ -1364,6 +1382,41 @@ void vector_update( void )
     vectorTexID = pingpongTexID[writeTex];
 
     detachFBOs();
+}
+
+void dump_ppm( GLuint tex, int x, int y, int yOff, char *filepatt )
+{
+    static char         filename[64];
+    unsigned char      *data;
+    int                 size;
+
+    size = x * y * 3;
+    data = (unsigned char *)malloc(size * sizeof(unsigned char));
+
+    detachFBOs();
+
+    glDrawBuffer( GL_NONE );
+
+    glBindTexture(texTarget, tex);
+    checkGLErrors("glBindTexture(tex)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, tex, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(tex)");
+
+    glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glReadBuffer(tex)");
+    checkFramebufferStatus(7);
+    glReadPixels( 0, yOff, x, y, GL_RGB, GL_UNSIGNED_BYTE, data );
+    checkGLErrors("glReadPixels(tex)");
+
+    detachFBOs();
+    
+    glReadBuffer( GL_NONE );
+
+    sprintf( filename, filepatt, frameNum );
+
+    save_ppm( data, x, y, 3, filename );
+    free(data);
 }
 
 void dump_data( GLuint tex, int x, int y )
@@ -1878,7 +1931,10 @@ void denoiseFrame( void )
     frameNum++;
 
     /* Copy input frame to ref */
-    copy_frame(refTexID, frameTexID, width, height, width, padHeight);
+    copy_frame(refTexID, frameTexID, width, padHeight, width, padHeight);
+#if 0
+    dump_ppm( refTexID, width, height, 32, "/tmp/ref%05d.ppm" );
+#endif
 
     if( new_scene ) {
         new_scene = FALSE;
@@ -1886,10 +1942,10 @@ void denoiseFrame( void )
         LogPrint( LOG_NOTICE, "New Scene detected, frame %d", frameNum );
 
         /* Copy input frame to avg */
-        copy_frame(avgTexID, frameTexID, width, height, width, padHeight);
+        copy_frame(avgTexID, frameTexID, width, padHeight, width, padHeight);
 
         /* Copy input frame to avg2 */
-        copy_frame(avg2TexID, frameTexID, width, height, width, padHeight);
+        copy_frame(avg2TexID, frameTexID, width, padHeight, width, padHeight);
     }
 
 #if 0
@@ -1925,6 +1981,10 @@ void denoiseFrame( void )
 
     /* Copy the output back to be read */
     copy_frame(frameTexID, avg2TexID, width, padHeight, width, padHeight);
+#if 0
+    dump_ppm( avgTexID, width, height, 32, "/tmp/avg%05d.ppm" );
+    dump_ppm( avg2TexID, width, height, 32, "/tmp/bvg%05d.ppm" );
+#endif
 
     /* Just to be sure */
     detachFBOs();
