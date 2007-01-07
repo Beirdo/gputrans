@@ -1817,9 +1817,11 @@ void mb_search_44( void )
             SAD( vector2TexID, sub4refTexID, sub4avgTexID, sub4Width, 
                  sub4Height, xx, yy, 2 );
             vector_update();
+#if 0
             if( frameNum == 3 ) {
                 dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_44:", "/tmp/44.out" );
             }
+#endif
         }
     }
 }
@@ -1835,18 +1837,22 @@ void mb_search_22( void )
     temp = vector2TexID;
     vector2TexID = vectorTexID;
     vectorTexID = temp;
+#if 0
     if( frameNum == 3 ) {
         dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_22:", "/tmp/22.out" );
     }
+#endif
 
     for( yy = -2; yy <= 2; yy++ ) {
         for( xx = -2; xx <= 2; xx++ ) {
             SAD_pass2( vector2TexID, sub2refTexID, sub2avgTexID, vectorTexID,
                        sub2Width, sub2Height, xx, yy, 4 );
             vector_update();
+#if 0
             if( frameNum == 3 ) {
                 dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_22:", "/tmp/22.out" );
             }
+#endif
         }
     }
 }
@@ -1862,27 +1868,33 @@ void mb_search_11( void )
     temp = vector2TexID;
     vector2TexID = vectorTexID;
     vectorTexID = temp;
+#if 0
     if( frameNum == 3 ) {
         dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_11:", "/tmp/11.out" );
     }
+#endif
 
     for( yy = -2; yy <= 2; yy++ ) {
         for( xx = -2; xx <= 2; xx++ ) {
             SAD_pass2( vector2TexID, refTexID, avgTexID, vectorTexID,
                        width, padHeight, xx, yy, 8 );
             vector_update();
+#if 0
             if( frameNum == 3 ) {
                 dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_11:", "/tmp/11.out" );
             }
+#endif
         }
     }
 
     /* Idiot-check against no motion */
     SAD( vector2TexID, refTexID, avgTexID, width, padHeight, 0, 0, 8 );
     vector_update();
-            if( frameNum == 3 ) {
-                dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_11:", "/tmp/11.out" );
-            }
+#if 0
+    if( frameNum == 3 ) {
+        dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_11:", "/tmp/11.out" );
+    }
+#endif
 }
 
 void mb_search_00( void )
@@ -1895,17 +1907,21 @@ void mb_search_00( void )
             SAD_halfpel( vector2TexID, refTexID, avgTexID, vectorTexID,
                          width, padHeight, xx, yy, 8 );
             vector_update();
+#if 0
             if( frameNum == 3 ) {
                 dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_00:", "/tmp/00.out" );
             }
+#endif
         }
     }
 
     vector_badcheck();
     vector_range();
-            if( frameNum == 3 ) {
-                dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_00:", "/tmp/00.out" );
-            }
+#if 0
+    if( frameNum == 3 ) {
+        dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_00:", "/tmp/00.out" );
+    }
+#endif
 }
 
 void move_frame( void )

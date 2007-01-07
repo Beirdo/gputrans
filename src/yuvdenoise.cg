@@ -270,7 +270,6 @@ float4 SAD_pass2( float2 coord                 : TEXCOORD0,
 
     /* Pre un-decimation coordinates for the vector */
     newoffset = texRECT( vector, coord ).xy;
-    newoffset *= 2.0;
     newoffset += offset;
 
     /* Account for the decimation of the vector to read out of the frame */
@@ -378,7 +377,7 @@ float4 vector_range( float2 coord                   : TEXCOORD0,
     float2 veccoord;
 
     vec = texRECT( vector, coord );
-    veccoord.xy = vec.xy + (coord - 0.5) * 8.0;
+    veccoord.xy = vec.xy + ((coord - 0.5) * 8.0);
     if( veccoord.x < 0 || veccoord.x > resolution.x ||
         veccoord.y < 32 || veccoord.y > resolution.y + 32 ) {
         vec.xy = 0;
