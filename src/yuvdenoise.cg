@@ -78,29 +78,12 @@ float thresh_diff( float2  coord               : TEXCOORD0,
     return output;
 }
 
-float decimate_add( float2  coord              : TEXCOORD0,
-                    uniform samplerRECT frame  : TEXUNIT1 ) : COLOR
-{
-    string id = "$Id$";
 
-    float value;
-
-    coord = ((coord - 0.5) * 2.0) + 0.5;
-
-    value  = texRECT(frame, coord).x;
-    value += texRECT(frame, coord + float2(1,0)).x;
-    value += texRECT(frame, coord + float2(1,1)).x;
-    value += texRECT(frame, coord + float2(0,1)).x;
-    
-    return value;
-}
-
-/*
 float decimate_add( float2  coord0             : TEXCOORD0,
                     float2  coord1             : TEXCOORD1,
                     float2  coord2             : TEXCOORD2,
                     float2  coord3             : TEXCOORD3,
-                    uniform samplerRECT frame  : TEXUNIT0 ) : COLOR
+                    uniform samplerRECT frame  : TEXUNIT1 ) : COLOR
 {
     string id = "$Id$";
 
@@ -110,10 +93,10 @@ float decimate_add( float2  coord0             : TEXCOORD0,
     value += texRECT(frame, coord1).x;
     value += texRECT(frame, coord2).x;
     value += texRECT(frame, coord3).x;
+    value /= 4.0;
     
     return value;
 }
-*/
 
 float3 move_frame( float2   coord               : TEXCOORD0,
                    uniform samplerRECT frame    : TEXUNIT1,
@@ -413,14 +396,28 @@ float4 vector_low_contrast( float2 coord              : TEXCOORD0,
 
     value = texRECT( frame, coord ).x;
 
-    outvec.xyzw = 0.0;
+    outvec.xyz = 1.0;
+    outvec.w = 0.0;
 
-    if( value > threshold ) {
+    if( value <= threshold ) {
         /* With a SAD of 0.0, we shouldn't end up overriding this */
+        outvec.xyz = 0.0;
         outvec.w = 1.0;
     }
 
     return outvec;
+}
+
+float scale( float2 coord               : TEXCOORD0,
+             uniform samplerRECT frame  : TEXUNIT1,
+             uniform float scale ) : COLOR
+{
+    string id = "$Id$";
+
+    float value;
+
+    value = texRECT(frame, coord).x / scale;
+    return value;
 }
 
 

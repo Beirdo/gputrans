@@ -53,6 +53,7 @@ void setupCardInfo( cardInfo_t *cardInfo, int childNum );
 void initFBO( void );
 void checkGLErrors( const char *label );
 void drawQuad( int wTex, int hTex, int wOut, int hOut );
+void drawQuadMulti( int wTex, int hTex, int wOut, int hOut );
 bool checkFramebufferStatus( int index );
 void swap( void );
 void setupTexture(const GLuint texID, GLenum format, GLenum inFormat, int x, 
@@ -102,8 +103,10 @@ void SAD_halfpel( GLuint vectorTex, GLuint refTex, GLuint avgTex,
 void vector_update( void );
 void vector_badcheck( void );
 void vector_range( void );
+void scale_buffer( GLuint destTex, GLuint srcTex, int x, int y, int scale );
 void dump_data( GLuint tex, int x, int y );
 void dump_ppm( GLuint tex, int x, int y, int yOff, char *filepatt );
+void dump_pgm( GLuint tex, int x, int y, int yOff, char *filepatt );
 
 void denoiseFrame( void );
 
@@ -128,7 +131,7 @@ float                   luma_contrast = 1.0;
 float                   chroma_contrast = 1.0;
 int                     scene_thresh = 50;
 float                   contrast_thresh = 0.019607843; /* 5/255 */
-int                     block_contrast_thresh = 0.031372549; /* 8/255 */
+int                     block_contrast_thresh = 0.125; /* 8/64 */
 int                     radius = 8;
 float                   block_bad_thresh = 4.015686275; /* 1024/255 */
 int                     delay = 3;
@@ -156,7 +159,7 @@ GLenum                  texFormatVect     = GL_RGBA;
 GLuint                  pingpongTexID[2];
 GLuint                  frameTexID;
 GLuint                  yTexID, uTexID, vTexID;
-GLuint                  refTexID, avgTexID, avg2TexID, tmpTexID;
+GLuint                  refTexID, avgTexID, avg2TexID, tmpTexID, tmp2TexID;
 GLuint                  sub2refTexID, sub2avgTexID, sub4refTexID, sub4avgTexID;
 GLuint                  diffTexID, vectorTexID, vector2TexID;
 GLuint                  vector3TexID, badTexID, bad2TexID;
@@ -174,6 +177,7 @@ CGprogram               frProgSharpenFrame, frProgSAD, frProgSADHalfpel;
 CGprogram               frProgCopy, frProgVectorUpdate;
 CGprogram               frProgVectorBadcheck, frProgVectorRange;
 CGprogram               frProgVectorLowContrast, frProgSADPass2;
+CGprogram               frProgScale;
 
 #if 0
 CGprogram               vxProgDecimateBy2;
@@ -214,7 +218,8 @@ static cgProgram_t cgPrograms[] = {
     { &frProgVectorBadcheck, "VectorBadcheck", "yuvdenoise.cg", "vector_badcheck", FP30 },
     { &frProgVectorRange, "VectorRange", "yuvdenoise.cg", "vector_range", FP30 },
     { &frProgVectorLowContrast, "VectorLowContrast", "yuvdenoise.cg", "vector_low_contrast", FP30 },
-    { &frProgSADPass2, "SADPass2", "yuvdenoise.cg", "SAD_pass2", FP30 }
+    { &frProgSADPass2, "SADPass2", "yuvdenoise.cg", "SAD_pass2", FP30 },
+    { &frProgScale, "Scale", "yuvdenoise.cg", "scale", FP30 }
 };
 static int cgProgramCount = NELEMENTS(cgPrograms);
 
@@ -451,6 +456,34 @@ void drawQuad( int wTex, int hTex, int wOut, int hOut )
     checkGLErrors("glEnd");
 }
 
+void drawQuadMulti( int wTex, int hTex, int wOut, int hOut )
+{
+    glBegin(GL_QUADS);
+    glMultiTexCoord2f(GL_TEXTURE0, -0.5, -0.5);
+    glMultiTexCoord2f(GL_TEXTURE1, 0.5, -0.5);
+    glMultiTexCoord2f(GL_TEXTURE2, -0.5, 0.5);
+    glMultiTexCoord2f(GL_TEXTURE3, 0.5, 0.5);
+    glVertex2f(0.0, 0.0);
+
+    glMultiTexCoord2f(GL_TEXTURE0, wTex - 0.5, -0.5);
+    glMultiTexCoord2f(GL_TEXTURE1, wTex + 0.5, -0.5);
+    glMultiTexCoord2f(GL_TEXTURE2, wTex - 0.5, 0.5);
+    glMultiTexCoord2f(GL_TEXTURE3, wTex + 0.5, 0.5);
+    glVertex2f(wOut, 0.0);
+
+    glMultiTexCoord2f(GL_TEXTURE0, wTex - 0.5, hTex - 0.5);
+    glMultiTexCoord2f(GL_TEXTURE1, wTex + 0.5, hTex - 0.5);
+    glMultiTexCoord2f(GL_TEXTURE2, wTex - 0.5, hTex + 0.5);
+    glMultiTexCoord2f(GL_TEXTURE3, wTex + 0.5, hTex + 0.5);
+    glVertex2f(wOut, hOut);
+
+    glMultiTexCoord2f(GL_TEXTURE0, -0.5, hTex - 0.5);
+    glMultiTexCoord2f(GL_TEXTURE1, 0.5,  hTex - 0.5);
+    glMultiTexCoord2f(GL_TEXTURE2, -0.5, hTex + 0.5);
+    glMultiTexCoord2f(GL_TEXTURE3, 0.5,  hTex + 0.5);
+    glVertex2f(0.0, hOut);
+    glEnd();
+}
 
 /*
  * Checks framebuffer status.
@@ -548,6 +581,7 @@ void createTextures( void )
     glGenTextures(1, &avgTexID);
     glGenTextures(1, &avg2TexID);
     glGenTextures(1, &tmpTexID);
+    glGenTextures(1, &tmp2TexID);
     glGenTextures(1, &sub2refTexID);
     glGenTextures(1, &sub2avgTexID);
     glGenTextures(1, &sub4refTexID);
@@ -566,6 +600,7 @@ void createTextures( void )
     setupTexture(avgTexID,     texIntFormat, texFormat, width, padHeight);
     setupTexture(avg2TexID,    texIntFormat, texFormat, width, padHeight);
     setupTexture(tmpTexID,     texIntFormat, texFormat, width, padHeight);
+    setupTexture(tmp2TexID,    texIntFormat, texFormat, width, padHeight);
     setupTexture(diffTexID,    texIntFormat, texFormat, width, padHeight);
 
     setupTexture(sub2refTexID, texIntFormat, texFormat, sub2Width, sub2Height);
@@ -845,11 +880,6 @@ void copy_frame( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight,
         cgCompileProgram( frProgCopy );
     }
 
-#if 0
-    LogPrint( LOG_CRIT, "Copy Texture %d (%dx%d) to Texture %d (%dx%d)",
-              srcTex, srcWidth, srcHeight, destTex, destWidth, destHeight );
-#endif
-
     /* Setup the source texture */
     glBindTexture(texTarget, srcTex);
     checkGLErrors("glBindTexture(src)");
@@ -883,6 +913,10 @@ void contrast_frame( void )
 {
     CGparameter frameParam;
     CGparameter contrastParam;
+
+    if( luma_contrast == 1.0 && chroma_contrast == 1.0 ) {
+        return;
+    }
 
     detachFBOs();
 
@@ -1068,7 +1102,7 @@ void decimate_add( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight )
     glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
     checkGLErrors("glDrawBuffer(dest)");
     checkFramebufferStatus(1);
-    drawQuad( srcWidth, srcHeight, (srcWidth+1) / 2, (srcHeight+1) / 2 );
+    drawQuadMulti( srcWidth, srcHeight, (srcWidth+1) / 2, (srcHeight+1) / 2 );
 
     checkFramebufferStatus(2);
 
@@ -1122,6 +1156,54 @@ void vector_low_contrast( GLuint destTex, GLuint srcTex, int srcWidth,
     checkFramebufferStatus(2);
 }
 
+void scale_buffer( GLuint destTex, GLuint srcTex, int x, int y, int scale )
+{
+    CGparameter frameParam;
+    CGparameter scaleParam;
+
+    if( srcTex == destTex ) {
+        LogPrint( LOG_CRIT, "Scale %d to itself", srcTex );
+        return;
+    }
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgScale ) ) {
+        cgCompileProgram( frProgScale );
+    }
+
+    /* Setup the source texture */
+    glBindTexture(texTarget, srcTex);
+    checkGLErrors("glBindTexture(src)");
+
+    /* Setup the Cg parameters, bind the program */
+    frameParam = cgGetNamedParameter( frProgScale, "frame" );
+    cgGLSetTextureParameter( frameParam, srcTex );
+    cgGLEnableTextureParameter( frameParam );
+    
+    scaleParam = cgGetNamedParameter( frProgScale, "scale" );
+    cgGLSetParameter1f( scaleParam, (float)scale );
+
+    cgGLLoadProgram( frProgScale );
+    cgGLBindProgram( frProgScale );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, destTex);
+    checkGLErrors("glBindTexture(dest)");
+
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, destTex, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(dest)");
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(dest)");
+    checkFramebufferStatus(1);
+    drawQuad( x, y, x, y );
+
+    checkFramebufferStatus(2);
+}
+
 void mark_low_contrast_blocks( void )
 {
     diff_frame( diffTexID, refTexID, avgTexID, width, padHeight );
@@ -1129,10 +1211,26 @@ void mark_low_contrast_blocks( void )
     dump_ppm( diffTexID, width, height, 32, "/tmp/diff%05d.ppm" );
 #endif
     thresh_diff( tmpTexID, diffTexID, width, padHeight, contrast_thresh );
+#if 0
+    dump_pgm( tmpTexID, width, height, 32, "/tmp/thres1h%05d.pgm" );
+#endif
 
     decimate_add( diffTexID, tmpTexID, width, padHeight );
+#if 0
+    dump_pgm( diffTexID, sub2Width, sub2Height - 32, 16, 
+              "/tmp/thres2h%05d.pgm" );
+#endif
+
     decimate_add( tmpTexID, diffTexID, sub2Width, sub2Height );
+#if 0
+    dump_pgm( tmpTexID, sub4Width, sub4Height - 16,  8, 
+              "/tmp/thres4h%05d.pgm" );
+#endif
+
     decimate_add( diffTexID, tmpTexID, sub4Width, sub4Height );
+#if 0
+    dump_pgm( diffTexID, vecWidth + 2, vecHeight - 8,  4, "/tmp/thres8h%05d.pgm" );
+#endif
 
     /* diffTexID now holds a /8 size frame of thresholded differences */
     vector_low_contrast( vectorTexID, diffTexID, vecWidth, vecHeight, 
@@ -1416,6 +1514,47 @@ void dump_ppm( GLuint tex, int x, int y, int yOff, char *filepatt )
     sprintf( filename, filepatt, frameNum );
 
     save_ppm( data, x, y, 3, filename );
+    free(data);
+}
+
+void dump_pgm( GLuint tex, int x, int y, int yOff, char *filepatt )
+{
+    static char         filename[128];
+    unsigned char      *data;
+    int                 size;
+
+    size = x * y;
+    data = (unsigned char *)malloc(size * sizeof(unsigned char));
+#if 0
+    LogPrint( LOG_CRIT, "x: %d, y: %d, size: %d, data: %p", x, y, size, data );
+#endif
+
+    detachFBOs();
+
+    glDrawBuffer( GL_NONE );
+
+    glBindTexture(texTarget, tex);
+    checkGLErrors("glBindTexture(tex)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, tex, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(tex)");
+
+    glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glReadBuffer(tex)");
+    checkFramebufferStatus(7);
+    glReadPixels( 0, yOff, x, y, GL_RED, GL_UNSIGNED_BYTE, data );
+    checkGLErrors("glReadPixels(tex)");
+
+    detachFBOs();
+    
+    glReadBuffer( GL_NONE );
+
+    snprintf( filename, 127, filepatt, frameNum );
+
+    save_ppm( data, x, y, 1, filename );
+#if 0
+    LogPrint( LOG_CRIT, "x: %d, y: %d, size: %d, data: %p", x, y, size, data );
+#endif
     free(data);
 }
 
@@ -1957,7 +2096,22 @@ void denoiseFrame( void )
     decimate_frame(sub4refTexID, sub2refTexID, sub2Width, sub2Height);
     decimate_frame(sub4avgTexID, sub2avgTexID, sub2Width, sub2Height);
 
+#if 0
+    dump_ppm( sub2refTexID, sub2Width, sub2Height - 32, 16, 
+              "/tmp/sub2ref%05d.ppm" );
+    dump_ppm( sub2avgTexID, sub2Width, sub2Height - 32, 16, 
+              "/tmp/sub2avg%05d.ppm" );
+    dump_ppm( sub4refTexID, sub4Width, sub4Height - 16,  8, 
+              "/tmp/sub4ref%05d.ppm" );
+    dump_ppm( sub4avgTexID, sub4Width, sub4Height - 16,  8, 
+              "/tmp/sub4avg%05d.ppm" );
+#endif
+
     mark_low_contrast_blocks();
+#if 0
+    dump_ppm( vectorTexID, vecWidth+2, vecHeight - 8, 4, "/tmp/vec1_%05d.ppm" );
+#endif
+
     mb_search_44();
     mb_search_22();
     mb_search_11();
