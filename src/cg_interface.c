@@ -179,10 +179,6 @@ CGprogram               frProgVectorBadcheck, frProgVectorRange;
 CGprogram               frProgVectorLowContrast, frProgSADPass2;
 CGprogram               frProgScale;
 
-#if 0
-CGprogram               vxProgDecimateBy2;
-#endif
-
 #define FP30 CG_PROFILE_FP30
 #define VP30 CG_PROFILE_VP30
 
@@ -199,9 +195,6 @@ static cgProgram_t cgPrograms[] = {
     { &frProgY420pOut,  "Y420pOut",  "yuv420p.cg", "y_output",  FP30 },
     { &frProgU420pOut,  "U420pOut",  "yuv420p.cg", "u_output",  FP30 },
     { &frProgV420pOut,  "V420pOut",  "yuv420p.cg", "v_output",  FP30 },
-#if 0
-    { &vxProgDecimateBy2, "DecimateBy2", "decimate.cg", "decimate_by_2", VP30 },
-#endif
     { &frProgContrastFrame, "ContrastFrame", "yuvdenoise.cg", "contrast_frame", FP30 },
     { &frProgDiffFrame, "DiffFrame", "yuvdenoise.cg", "diff_frame", FP30 },
     { &frProgThreshDiff, "ThreshDiff", "yuvdenoise.cg", "thresh_diff", FP30 },
@@ -1067,12 +1060,6 @@ void decimate_add( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight )
         cgCompileProgram( frProgDecimateAdd );
     }
 
-#if 0
-    if( !cgIsProgramCompiled( vxProgDecimateBy2 ) ) {
-        cgCompileProgram( vxProgDecimateBy2 );
-    }
-#endif
-
     /* Setup the source texture */
     glBindTexture(texTarget, srcTex);
     checkGLErrors("glBindTexture(src)");
@@ -1083,13 +1070,6 @@ void decimate_add( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight )
     cgGLEnableTextureParameter( frameParam );
     cgGLLoadProgram( frProgDecimateAdd );
     cgGLBindProgram( frProgDecimateAdd );
-
-#if 0
-    /* Also setup the vertex program */
-    cgGLLoadProgram( vxProgDecimateBy2 );
-    cgGLEnableProfile( vertexProfile );
-    cgGLBindProgram( vxProgDecimateBy2 );
-#endif
 
     /* Setup the destination */
     glBindTexture(texTarget, destTex);
@@ -1105,10 +1085,6 @@ void decimate_add( GLuint destTex, GLuint srcTex, int srcWidth, int srcHeight )
     drawQuadMulti( srcWidth, srcHeight, (srcWidth+1) / 2, (srcHeight+1) / 2 );
 
     checkFramebufferStatus(2);
-
-#if 0
-    cgGLDisableProfile( vertexProfile );
-#endif
 }
 
 void vector_low_contrast( GLuint destTex, GLuint srcTex, int srcWidth, 
