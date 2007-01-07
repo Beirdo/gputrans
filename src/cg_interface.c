@@ -101,10 +101,12 @@ void SAD_halfpel( GLuint vectorTex, GLuint refTex, GLuint avgTex,
                   GLuint vectorInTex, int srcWidth, int srcHeight, int xoffset, 
                   int yoffset, int factor );
 void vector_update( void );
+void vector_scale( GLuint destTex, GLuint srcTex, int x, int y, int scale );
 void vector_badcheck( void );
 void vector_range( void );
 void scale_buffer( GLuint destTex, GLuint srcTex, int x, int y, int scale );
 void dump_data( GLuint tex, int x, int y );
+void dump_data3d( GLuint tex, int x, int y, char *tag, char *filename );
 void dump_ppm( GLuint tex, int x, int y, int yOff, char *filepatt );
 void dump_pgm( GLuint tex, int x, int y, int yOff, char *filepatt );
 
@@ -151,7 +153,7 @@ GLenum                  attachmentpoints[] = { GL_COLOR_ATTACHMENT0_EXT,
 GLenum                  texTarget         = GL_TEXTURE_RECTANGLE_NV;
 GLenum                  texIntFormatInout = GL_RGB8;
 GLenum                  texIntFormat      = GL_RGB16; /* GL_FLOAT_RGB32_NV; GL_RGB16;*/
-GLenum                  texIntFormatVect  = GL_RGBA16;
+GLenum                  texIntFormatVect  = GL_FLOAT_RGBA16_NV;
 GLenum                  texFormatInout    = GL_RED;
 GLenum                  texFormat         = GL_RGB;
 GLenum                  texFormatVect     = GL_RGBA;
@@ -177,7 +179,7 @@ CGprogram               frProgSharpenFrame, frProgSAD, frProgSADHalfpel;
 CGprogram               frProgCopy, frProgVectorUpdate;
 CGprogram               frProgVectorBadcheck, frProgVectorRange;
 CGprogram               frProgVectorLowContrast, frProgSADPass2;
-CGprogram               frProgScale;
+CGprogram               frProgScale, frProgVectorScale;
 
 #define FP30 CG_PROFILE_FP30
 #define VP30 CG_PROFILE_VP30
@@ -212,7 +214,8 @@ static cgProgram_t cgPrograms[] = {
     { &frProgVectorRange, "VectorRange", "yuvdenoise.cg", "vector_range", FP30 },
     { &frProgVectorLowContrast, "VectorLowContrast", "yuvdenoise.cg", "vector_low_contrast", FP30 },
     { &frProgSADPass2, "SADPass2", "yuvdenoise.cg", "SAD_pass2", FP30 },
-    { &frProgScale, "Scale", "yuvdenoise.cg", "scale", FP30 }
+    { &frProgScale, "Scale", "yuvdenoise.cg", "scale", FP30 },
+    { &frProgVectorScale, "VectorScale", "yuvdenoise.cg", "vector_scale", FP30 }
 };
 static int cgProgramCount = NELEMENTS(cgPrograms);
 
@@ -1132,6 +1135,54 @@ void vector_low_contrast( GLuint destTex, GLuint srcTex, int srcWidth,
     checkFramebufferStatus(2);
 }
 
+void vector_scale( GLuint destTex, GLuint srcTex, int x, int y, int scale )
+{
+    CGparameter frameParam;
+    CGparameter scaleParam;
+
+    if( srcTex == destTex ) {
+        LogPrint( LOG_CRIT, "Scale %d to itself", srcTex );
+        return;
+    }
+
+    detachFBOs();
+
+    if( !cgIsProgramCompiled( frProgVectorScale ) ) {
+        cgCompileProgram( frProgVectorScale );
+    }
+
+    /* Setup the source texture */
+    glBindTexture(texTarget, srcTex);
+    checkGLErrors("glBindTexture(src)");
+
+    /* Setup the Cg parameters, bind the program */
+    frameParam = cgGetNamedParameter( frProgVectorScale, "frame" );
+    cgGLSetTextureParameter( frameParam, srcTex );
+    cgGLEnableTextureParameter( frameParam );
+    
+    scaleParam = cgGetNamedParameter( frProgVectorScale, "scale" );
+    cgGLSetParameter1f( scaleParam, (float)scale );
+
+    cgGLLoadProgram( frProgVectorScale );
+    cgGLBindProgram( frProgVectorScale );
+
+    /* Setup the destination */
+    glBindTexture(texTarget, destTex);
+    checkGLErrors("glBindTexture(dest)");
+
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, destTex, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(dest)");
+
+    /* Attach the output */
+    glDrawBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glDrawBuffer(dest)");
+    checkFramebufferStatus(1);
+    drawQuad( x, y, x, y );
+
+    checkFramebufferStatus(2);
+}
+
 void scale_buffer( GLuint destTex, GLuint srcTex, int x, int y, int scale )
 {
     CGparameter frameParam;
@@ -1574,6 +1625,50 @@ void dump_data( GLuint tex, int x, int y )
     free(data);
 }
 
+void dump_data3d( GLuint tex, int x, int y, char *tag, char *filename )
+{
+    FILE           *fp;
+    float          *data;
+    int             i;
+    int             j;
+    int             index;
+
+    data = (float *)malloc(x*y*3*sizeof(float));
+
+    detachFBOs();
+    glDrawBuffer( GL_NONE );
+    glBindTexture(texTarget, tex);
+    checkGLErrors("glBindTexture(dump)");
+    glFramebufferTexture2DEXT(GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+                              texTarget, tex, 0);
+    checkGLErrors("glFramebufferTexture2DEXT(tex)");
+    glReadBuffer( GL_COLOR_ATTACHMENT0_EXT );
+    checkGLErrors("glReadBuffer(tex)");
+    glReadPixels( 0, 0, x, y, GL_RGB, GL_FLOAT, data );
+    checkGLErrors("glReadPixels(tex)");
+
+    glReadBuffer( GL_NONE );
+    detachFBOs();
+
+    fp = fopen( filename, "at" );
+
+    fprintf(fp, "%s\n\n", tag );
+    for( i = 0; i < y; i++ ) {
+        for( j = 0; j < x; j++ ) {
+            index = (i*x + j) * 3;
+            fprintf(fp, "Row %d, Col %d:  ", i, j );
+            fprintf(fp, "%f %f %f\n", data[index], data[index+1], 
+                                      data[index+2]);
+        }
+        fprintf(fp, "\n");
+    }
+
+    fprintf(fp, "\n\n");
+    fclose(fp);
+
+    free(data);
+}
+
 void vector_badcheck( void )
 {
     CGparameter     vectorParam;
@@ -1584,6 +1679,7 @@ void vector_badcheck( void )
     int             yy;
     float           bad_count;
     GLuint          temp;
+    float           factor;
 
     x = vecWidth;
     y = vecHeight;
@@ -1624,8 +1720,10 @@ void vector_badcheck( void )
 
     checkFramebufferStatus(2);
 #if 0
-    dump_data( badTexID, x, y );
+    dump_pgm( badTexID, x+2, y, 0, "/tmp/bad1_%05d.pgm" );
 #endif
+
+    factor = 1.0;
 
     /* Decimate the bad_vector data down to a single number */
     while( x > 1 && y > 1 ) {
@@ -1633,10 +1731,8 @@ void vector_badcheck( void )
         yy = (y + 1) / 2;
 
         decimate_add( bad2TexID, badTexID, x, y );
-#if 0
-        dump_data( bad2TexID, xx, yy );
-        dump_data( bad2TexID, xx, yy );
-#endif
+        factor *= 4.0;
+        
         temp = bad2TexID;
         bad2TexID = badTexID;
         badTexID = temp;
@@ -1659,7 +1755,8 @@ void vector_badcheck( void )
     glReadPixels( 0, 0, 1, 1, texFormatInout, GL_FLOAT, &bad_count );
     checkGLErrors("glReadPixels(bad)");
 
-#if 0
+    bad_count *= factor;
+#if 1
     LogPrint( LOG_CRIT, "bad_count: %f", bad_count );
 #endif
     bad_vector += (int)bad_count;
@@ -1720,6 +1817,9 @@ void mb_search_44( void )
             SAD( vector2TexID, sub4refTexID, sub4avgTexID, sub4Width, 
                  sub4Height, xx, yy, 2 );
             vector_update();
+            if( frameNum == 3 ) {
+                dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_44:", "/tmp/44.out" );
+            }
         }
     }
 }
@@ -1728,12 +1828,25 @@ void mb_search_22( void )
 {
     int         xx;
     int         yy;
+    GLuint      temp;
+
+    /* Unscale the subscaled vectors */
+    vector_scale( vector2TexID, vectorTexID, vecWidth, vecHeight, 2 );
+    temp = vector2TexID;
+    vector2TexID = vectorTexID;
+    vectorTexID = temp;
+    if( frameNum == 3 ) {
+        dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_22:", "/tmp/22.out" );
+    }
 
     for( yy = -2; yy <= 2; yy++ ) {
         for( xx = -2; xx <= 2; xx++ ) {
             SAD_pass2( vector2TexID, sub2refTexID, sub2avgTexID, vectorTexID,
                        sub2Width, sub2Height, xx, yy, 4 );
             vector_update();
+            if( frameNum == 3 ) {
+                dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_22:", "/tmp/22.out" );
+            }
         }
     }
 }
@@ -1742,18 +1855,34 @@ void mb_search_11( void )
 {
     int         xx;
     int         yy;
+    GLuint      temp;
+
+    /* Unscale the subscaled vectors */
+    vector_scale( vector2TexID, vectorTexID, vecWidth, vecHeight, 2 );
+    temp = vector2TexID;
+    vector2TexID = vectorTexID;
+    vectorTexID = temp;
+    if( frameNum == 3 ) {
+        dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_11:", "/tmp/11.out" );
+    }
 
     for( yy = -2; yy <= 2; yy++ ) {
         for( xx = -2; xx <= 2; xx++ ) {
             SAD_pass2( vector2TexID, refTexID, avgTexID, vectorTexID,
                        width, padHeight, xx, yy, 8 );
             vector_update();
+            if( frameNum == 3 ) {
+                dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_11:", "/tmp/11.out" );
+            }
         }
     }
 
     /* Idiot-check against no motion */
     SAD( vector2TexID, refTexID, avgTexID, width, padHeight, 0, 0, 8 );
     vector_update();
+            if( frameNum == 3 ) {
+                dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_11:", "/tmp/11.out" );
+            }
 }
 
 void mb_search_00( void )
@@ -1766,11 +1895,17 @@ void mb_search_00( void )
             SAD_halfpel( vector2TexID, refTexID, avgTexID, vectorTexID,
                          width, padHeight, xx, yy, 8 );
             vector_update();
+            if( frameNum == 3 ) {
+                dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_00:", "/tmp/00.out" );
+            }
         }
     }
 
     vector_badcheck();
     vector_range();
+            if( frameNum == 3 ) {
+                dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_00:", "/tmp/00.out" );
+            }
 }
 
 void move_frame( void )
@@ -2089,10 +2224,33 @@ void denoiseFrame( void )
 #endif
 
     mb_search_44();
+#if 0
+    dump_ppm( vectorTexID, vecWidth+2, vecHeight - 8, 4, "/tmp/vec2_%05d.ppm" );
+    dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_44:", "/tmp/44.out" );
+#endif
+
     mb_search_22();
+#if 0
+    dump_ppm( vectorTexID, vecWidth+2, vecHeight - 8, 4, "/tmp/vec3_%05d.ppm" );
+    dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_22:", "/tmp/22.out" );
+#endif
+
     mb_search_11();
+#if 0
+    dump_ppm( vectorTexID, vecWidth+2, vecHeight - 8, 4, "/tmp/vec4_%05d.ppm" );
+    dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_11:", "/tmp/11.out" );
+#endif
+
     mb_search_00();
+#if 0
+    dump_ppm( vectorTexID, vecWidth+2, vecHeight - 8, 4, "/tmp/vec5_%05d.ppm" );
+    dump_data3d( vectorTexID, vecWidth, vecHeight, "mb_search_00:", "/tmp/00.out" );
+#endif
+
     move_frame();
+#if 0
+    dump_ppm( avgTexID, width, height, 32, "/tmp/avga_%05d.ppm" );
+#endif
 
 #if 0
     LogPrint( LOG_CRIT, "Frame %d - %d bad_vector", frameNum, bad_vector );
@@ -2105,16 +2263,27 @@ void denoiseFrame( void )
     bad_vector = 0;
     
     average_frame();
+#if 0
+    dump_ppm( avgTexID, width, height, 32, "/tmp/avgb_%05d.ppm" );
+#endif
+
     correct_frame2();
+#if 0
+    dump_ppm( avgTexID, width, height, 32, "/tmp/avgc_%05d.ppm" );
+#endif
+
     denoise_frame_pass2();
+#if 0
+    dump_ppm( avg2TexID, width, height, 32, "/tmp/avgd_%05d.ppm" );
+#endif
+    
     sharpen_frame();
+#if 0
+    dump_ppm( avg2TexID, width, height, 32, "/tmp/avge_%05d.ppm" );
+#endif
 
     /* Copy the output back to be read */
     copy_frame(frameTexID, avg2TexID, width, padHeight, width, padHeight);
-#if 0
-    dump_ppm( avgTexID, width, height, 32, "/tmp/avg%05d.ppm" );
-    dump_ppm( avg2TexID, width, height, 32, "/tmp/bvg%05d.ppm" );
-#endif
 
     /* Just to be sure */
     detachFBOs();

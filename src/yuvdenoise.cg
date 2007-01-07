@@ -242,8 +242,10 @@ float4 SAD( float2 coord                 : TEXCOORD0,
     diff = abs( texRECT( frameA, coord ).xyz - 
                 texRECT( frameB, coord + offset ).xyz );
     sad = diff.x + diff.y + diff.z;
+    /*
     sad += (offset.x * offset.x);
     sad += (offset.y * offset.y);
+    */
     
     newvec.xy = offset;
     newvec.z = sad;
@@ -417,6 +419,21 @@ float scale( float2 coord               : TEXCOORD0,
     float value;
 
     value = texRECT(frame, coord).x / scale;
+    return value;
+}
+
+float4 vector_scale( float2 coord               : TEXCOORD0,
+                     uniform samplerRECT frame  : TEXUNIT1,
+                     uniform float scale ) : COLOR
+{
+    string id = "$Id$";
+
+    float4 value;
+
+    value = texRECT(frame, coord);
+    if(value.w == 1.0) {
+        value.xy *= scale;
+    }
     return value;
 }
 
