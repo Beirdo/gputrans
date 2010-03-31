@@ -33,8 +33,8 @@
 #include <sys/msg.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <ffmpeg/avformat.h>
-#include <ffmpeg/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
 #include "ipc_queue.h"
 #include "ipc_logging.h"
 #include "video.h"

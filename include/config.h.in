@@ -19,6 +19,15 @@
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
+/* Define to 1 if you have the `avcodec' library (-lavcodec). */
+#undef HAVE_LIBAVCODEC
+
+/* Define to 1 if you have the `avformat' library (-lavformat). */
+#undef HAVE_LIBAVFORMAT
+
+/* Define to 1 if you have the `avutil' library (-lavutil). */
+#undef HAVE_LIBAVUTIL
+
 /* Define to 1 if you have the `Cg' library (-lCg). */
 #undef HAVE_LIBCG
 
@@ -36,6 +45,9 @@
 
 /* Define to 1 if you have the `pthread' library (-lpthread). */
 #undef HAVE_LIBPTHREAD
+
+/* Define to 1 if you have the `swscale' library (-lswscale). */
+#undef HAVE_LIBSWSCALE
 
 /* Define to 1 if you have the `localtime_r' function. */
 #undef HAVE_LOCALTIME_R
@@ -109,9 +121,6 @@
 
 /* Define to 1 if the system has the type `_Bool'. */
 #undef HAVE__BOOL
-
-/* Minimum libGLEW version required */
-#undef MIN_GLEW_VERSION
 
 /* Name of package */
 #undef PACKAGE

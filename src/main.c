@@ -362,6 +362,7 @@ void readConfigFile( void )
     char           *comment;
     char           *display;
     int             len;
+    char           *retval;
 
     fp = fopen( CONF_FILE, "r" );
     if( !fp ) {
@@ -369,7 +370,7 @@ void readConfigFile( void )
     }
 
     while( !feof( fp ) && numChildren < MAX_NUM_CARDS ) {
-        fgets( line, MAX_STRING_LENGTH, fp );
+        retval = fgets( line, MAX_STRING_LENGTH, fp );
         if( line[0] == '\0' || line[0] == '\n' || line[0] == '\r' ||
             line[0] == '#' ) {
             continue;

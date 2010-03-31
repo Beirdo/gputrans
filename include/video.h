@@ -28,8 +28,8 @@
 #ifndef _video_h
 #define _video_h
 
-#include <ffmpeg/avformat.h>
-#include <ffmpeg/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
 #include "shared_mem.h"
 
 /* SVN generated ID string */

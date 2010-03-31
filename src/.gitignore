@@ -1,0 +1,4 @@
+.deps/
+*.o
+gputrans
+test_decode

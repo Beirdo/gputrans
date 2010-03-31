@@ -36,8 +36,9 @@
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
-#include <ffmpeg/avcodec.h>
-#include <ffmpeg/avformat.h>
+#include <libavcodec/avcodec.h>
+#include <libavformat/avformat.h>
+#include <libswscale/swscale.h>
 #include <pthread.h>
 #include "ipc_queue.h"
 #include "ipc_logging.h"
@@ -139,9 +140,10 @@ void openFile( char *input_filename, int *cols, int *rows )
 
 bool getFrame( AVPicture *pict, int pix_fmt )
 {
-    bool            got_picture = FALSE;
+    bool            	        got_picture = FALSE;
 
-    AVPacket        pkt;
+    AVPacket        	        pkt;
+    static struct SwsContext   *swsctx = NULL;
 
     while ( !got_picture ) {
         /*
@@ -172,8 +174,17 @@ bool getFrame( AVPicture *pict, int pix_fmt )
                 if( GlobalAbort ) {
                     return( FALSE );
                 }
-                img_convert(pict, pix_fmt, (AVPicture *)frame,
-                            ccx->pix_fmt, ccx->width, ccx->height);
+
+                if( !swsctx ) {
+                    swsctx = sws_getContext(ccx->width, ccx->height, 
+                                            ccx->pix_fmt, ccx->width,
+                                            ccx->height, pix_fmt, 
+                                            SWS_FAST_BILINEAR,
+                                            NULL, NULL, NULL);
+                }
+                                            
+                sws_scale( swsctx, frame->data, frame->linesize, 0, 
+                           ccx->height, pict->data, pict->linesize );
             }
 
         }
@@ -202,6 +213,7 @@ void save_ppm( const unsigned char *rgb, size_t cols, size_t rows, int pixsize,
 {
     int         fd;
     char        string[64];
+    int         retval;
 
     if( !file ) {
         return;
@@ -210,10 +222,10 @@ void save_ppm( const unsigned char *rgb, size_t cols, size_t rows, int pixsize,
     fd = open( file, O_CREAT | O_TRUNC | O_WRONLY, 0644 );
     switch (pixsize) {
     case 1:
-        write( fd, "P5\n", 3 );
+        retval = write( fd, "P5\n", 3 );
         break;
     case 3:
-        write( fd, "P6\n", 3 );
+        retval = write( fd, "P6\n", 3 );
         break;
     default:
         LogPrint( LOG_CRIT, "Can't handle pixel size: %d", pixsize );
@@ -221,8 +233,8 @@ void save_ppm( const unsigned char *rgb, size_t cols, size_t rows, int pixsize,
     }
 
     sprintf( string, "%ld %ld\n%d\n", (long)cols, (long)rows, 255 );
-    write( fd, string, strlen(string) );
-    write( fd, (const char *) rgb, rows * cols * pixsize );
+    retval = write( fd, string, strlen(string) );
+    retval = write( fd, (const char *) rgb, rows * cols * pixsize );
 
     close( fd );
 }
@@ -412,6 +424,7 @@ void videoOut( int frameNum, int index )
     static char         filename[64];
     static AVPicture    pict;
     static bool         init = FALSE;
+    static struct SwsContext   *swsctx = NULL;
 
     sprintf( filename, "out/%05d.ppm", frameNum );
 
@@ -420,8 +433,17 @@ void videoOut( int frameNum, int index )
                          sharedMem->rows );
         init = TRUE;
     }
-    img_convert(&pict, PIX_FMT_RGB24, &avFrameOut[index], PIX_FMT_YUV420P, 
-                sharedMem->cols, sharedMem->rows);
+
+    if( !swsctx ) {
+        swsctx = sws_getContext(sharedMem->cols, sharedMem->rows, 
+                                PIX_FMT_YUV420P, sharedMem->cols,
+                                sharedMem->rows, PIX_FMT_RGB24, 
+                                SWS_FAST_BILINEAR,
+                                NULL, NULL, NULL);
+    }
+                                
+    sws_scale( swsctx, avFrameOut[index].data, avFrameOut[index].linesize, 0, 
+               sharedMem->cols, pict.data, pict.linesize );
     save_ppm( pict.data[0], sharedMem->cols, sharedMem->rows, 3, filename );
 }
 
@@ -430,6 +452,7 @@ void videoIn( int frameNum, int index )
     static char         filename[64];
     static AVPicture    pict;
     static bool         init = FALSE;
+    static struct SwsContext   *swsctx = NULL;
 
     sprintf( filename, "in/%05d.ppm", frameNum );
 
@@ -438,8 +461,17 @@ void videoIn( int frameNum, int index )
                          sharedMem->rows );
         init = TRUE;
     }
-    img_convert(&pict, PIX_FMT_RGB24, &avFrameIn[index], PIX_FMT_YUV420P, 
-                sharedMem->cols, sharedMem->rows);
+
+    if( !swsctx ) {
+        swsctx = sws_getContext(sharedMem->cols, sharedMem->rows, 
+                                PIX_FMT_YUV420P, sharedMem->cols,
+                                sharedMem->rows, PIX_FMT_RGB24, 
+                                SWS_FAST_BILINEAR,
+                                NULL, NULL, NULL);
+    }
+                                
+    sws_scale( swsctx, avFrameIn[index].data, avFrameIn[index].linesize, 0, 
+               sharedMem->cols, pict.data, pict.linesize );
     save_ppm( pict.data[0], sharedMem->cols, sharedMem->rows, 3, filename );
 }
 

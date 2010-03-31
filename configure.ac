@@ -31,60 +31,61 @@ GJH_CHECK_LIB(pthread, pthread_create)
 GJH_CHECK_LIB(Cg, cgCompileProgram)
 GJH_CHECK_LIB(CgGL, cgGLBindProgram)
 
-# Check version of GLEW >= 1.3.1 (where framebuffer objects got supported)
-MIN_GLEW_VERSION='1.3.1'
-AC_DEFINE_UNQUOTED( [MIN_GLEW_VERSION], ["$MIN_GLEW_VERSION"], 
-           [Minimum libGLEW version required] )
-AC_SUBST(MIN_GLEW_VERSION)
-AC_MSG_CHECKING(version of libGLEW >= $MIN_GLEW_VERSION)
-AC_LANG_PUSH(C)
-AC_RUN_IFELSE([AC_LANG_SOURCE([[
-#include <stdio.h>
-#include <GL/glew.h>
+## Check version of GLEW >= 1.3.1 (where framebuffer objects got supported)
+#MIN_GLEW_VERSION='1.3.1'
+#AC_DEFINE_UNQUOTED( [MIN_GLEW_VERSION], ["$MIN_GLEW_VERSION"], 
+#           [Minimum libGLEW version required] )
+#AC_SUBST(MIN_GLEW_VERSION)
+#AC_MSG_CHECKING(version of libGLEW >= $MIN_GLEW_VERSION)
+#AC_LANG_PUSH(C)
+#AC_RUN_IFELSE([AC_LANG_SOURCE([[
+##include <stdio.h>
+##include <GL/glew.h>
+#
+#int main( int argc, char **argv )
+#{
+#    const unsigned char *versionString;
+#    int         major, minor, patch;
+#    int         min_major, min_minor, min_patch;
+#
+#    glewInit();
+#    versionString = glewGetString(GLEW_VERSION);
+#    sscanf( (char *)versionString, "%d.%d.%d", &major, &minor, &patch );
+#    sscanf( (char *)MIN_GLEW_VERSION, "%d.%d.%d", &min_major, &min_minor, 
+#                                                  &min_patch );
+#    printf( "%d.%d.%d   ", major, minor, patch );
+#
+#    if( major >  min_major )  return( 0 );
+#    if( major <  min_major )  return( 1 );
+#    if( minor >  min_minor )  return( 0 );
+#    if( minor <  min_minor )  return( 1 );
+#    if( patch >= min_patch )  return( 0 );
+#    return(1);
+#}
+#]])], [AC_MSG_RESULT([OK])], 
+#  [AC_MSG_RESULT([fail])
+#   AC_MSG_FAILURE([libGLEW is too old])])
+#dnl  [AC_MSG_RESULT[no]])
+#
+#AC_LANG_POP(C)
 
-int main( int argc, char **argv )
-{
-    const unsigned char *versionString;
-    int         major, minor, patch;
-    int         min_major, min_minor, min_patch;
+AC_ARG_VAR(PKG_CONFIG, [location of the pkg-config command])
+AC_PATH_PROG(PKG_CONFIG, pkg-config)
 
-    glewInit();
-    versionString = glewGetString(GLEW_VERSION);
-    sscanf( (char *)versionString, "%d.%d.%d", &major, &minor, &patch );
-    sscanf( (char *)MIN_GLEW_VERSION, "%d.%d.%d", &min_major, &min_minor, 
-                                                  &min_patch );
-    printf( "%d.%d.%d   ", major, minor, patch );
-
-    if( major >  min_major )  return( 0 );
-    if( major <  min_major )  return( 1 );
-    if( minor >  min_minor )  return( 0 );
-    if( minor <  min_minor )  return( 1 );
-    if( patch >= min_patch )  return( 0 );
-    return(1);
-}
-]])], [AC_MSG_RESULT([OK])], 
-  [AC_MSG_RESULT([fail])
-   AC_MSG_FAILURE([libGLEW is too old])], 
-  [AC_MSG_RESULT[no]])
-AC_LANG_POP(C)
-
-AC_ARG_VAR(FFMPEG_CONFIG, [location of the ffmpeg-config command])
-AC_PATH_PROG(FFMPEG_CONFIG, ffmpeg-config)
-
-if test -z "${FFMPEG_CONFIG}" ; then
-   AC_MSG_ERROR([You need ffmpeg-config (from the ffmpeg libraries)])
+if test -z "${PKG_CONFIG}" ; then
+   AC_MSG_ERROR([You need pkg-config])
 fi
 
-AC_MSG_CHECKING(libs to add for proper ffmpeg operation)
-FFMPEG_LIBS=`${FFMPEG_CONFIG} --plugin-libs avformat`
-AC_MSG_RESULT(${FFMPEG_LIBS})
+#AC_MSG_CHECKING(libs to add for proper ffmpeg operation)
+#FFMPEG_LIBS=`${PKG_CONFIG} --libs libavformat`
+#AC_MSG_RESULT(${FFMPEG_LIBS})
+#
+#LIBS="${FFMPEG_LIBS} ${LIBS}"
 
-LIBS="${FFMPEG_LIBS} ${LIBS}"
-
-
-#GJH_CHECK_LIB(avutil, av_rescale)
-#GJH_CHECK_LIB(avcodec, avcodec_open)
-#GJH_CHECK_LIB(avformat, av_read_frame)
+GJH_CHECK_LIB(avutil, av_rescale)
+GJH_CHECK_LIB(avcodec, avcodec_open)
+GJH_CHECK_LIB(avformat, av_read_frame)
+GJH_CHECK_LIB(swscale, sws_scale)
 
 
 # Checks for header files.
