@@ -160,8 +160,7 @@ bool getFrame( AVPicture *pict, int pix_fmt )
             /*
              * Decode the packet 
              */
-            if( avcodec_decode_video(ccx, frame, &got_picture, pkt.data, 
-                                     pkt.size) < 0 ) {
+            if( avcodec_decode_video2(ccx, frame, &got_picture, &pkt) < 0 ) {
                 LogPrintNoArg( LOG_CRIT, "Found bad frame, continuing" );
                 got_picture = FALSE;
             }
@@ -183,7 +182,8 @@ bool getFrame( AVPicture *pict, int pix_fmt )
                                             NULL, NULL, NULL);
                 }
                                             
-                sws_scale( swsctx, frame->data, frame->linesize, 0, 
+                sws_scale( swsctx, (const uint8_t * const*)frame->data,
+                           frame->linesize, 0, 
                            ccx->height, pict->data, pict->linesize );
             }
 
@@ -442,8 +442,9 @@ void videoOut( int frameNum, int index )
                                 NULL, NULL, NULL);
     }
                                 
-    sws_scale( swsctx, avFrameOut[index].data, avFrameOut[index].linesize, 0, 
-               sharedMem->cols, pict.data, pict.linesize );
+    sws_scale( swsctx, (const uint8_t * const*)avFrameOut[index].data,
+               avFrameOut[index].linesize, 0, 
+               sharedMem->rows, pict.data, pict.linesize );
     save_ppm( pict.data[0], sharedMem->cols, sharedMem->rows, 3, filename );
 }
 
@@ -470,8 +471,9 @@ void videoIn( int frameNum, int index )
                                 NULL, NULL, NULL);
     }
                                 
-    sws_scale( swsctx, avFrameIn[index].data, avFrameIn[index].linesize, 0, 
-               sharedMem->cols, pict.data, pict.linesize );
+    sws_scale( swsctx, (const uint8_t * const*)avFrameIn[index].data,
+               avFrameIn[index].linesize, 0, 
+               sharedMem->rows, pict.data, pict.linesize );
     save_ppm( pict.data[0], sharedMem->cols, sharedMem->rows, 3, filename );
 }
 
