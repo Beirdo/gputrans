@@ -445,7 +445,9 @@ void videoOut( int frameNum, int index )
     sws_scale( swsctx, (const uint8_t * const*)avFrameOut[index].data,
                avFrameOut[index].linesize, 0, 
                sharedMem->rows, pict.data, pict.linesize );
+#if 1
     save_ppm( pict.data[0], sharedMem->cols, sharedMem->rows, 3, filename );
+#endif
 }
 
 void videoIn( int frameNum, int index )
@@ -474,7 +476,9 @@ void videoIn( int frameNum, int index )
     sws_scale( swsctx, (const uint8_t * const*)avFrameIn[index].data,
                avFrameIn[index].linesize, 0, 
                sharedMem->rows, pict.data, pict.linesize );
+#if 1
     save_ppm( pict.data[0], sharedMem->cols, sharedMem->rows, 3, filename );
+#endif
 }
 
 /*
