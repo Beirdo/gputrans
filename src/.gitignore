@@ -2,3 +2,6 @@
 *.o
 gputrans
 test_decode
+*.ppm
+*.mpg
+tmp
